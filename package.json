@@ -1,0 +1,20 @@
+{
+  "name": "mcp-zen",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "Mike Smullin <mike@smullindesign.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikesmullin/mcp-zen.git"
+  },
+  "description": "Persistent MCP HTTP server + Zen/Firefox extension for remote-controlling your main browser",
+  "workspaces": [
+    "common",
+    "mcp-server",
+    "firefox-extension"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace common && npm run build --workspace mcp-server && npm run build --workspace firefox-extension"
+  }
+}
