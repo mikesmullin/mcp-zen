@@ -60,7 +60,21 @@ the one MCP clients talk to).
 
 ### 3. Install and run
 
+`bin/` is gitignored (it's a local PATH-install wrapper, not project source),
+so create it once per checkout:
+
 ```bash
+mkdir -p bin
+cat > bin/mcp-zen <<'EOF'
+#!/usr/bin/env bash
+# Thin wrapper so `mcp-zen` can be installed on $PATH (e.g. symlinked into
+# ~/.local/bin) while the actual project stays put wherever it's checked out.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+exec node "$SCRIPT_DIR/../mcp-server/dist/server.js" "$@"
+EOF
+chmod +x bin/mcp-zen
+
 ln -sf "$(pwd)/bin/mcp-zen" ~/.local/bin/mcp-zen   # once, so it's on $PATH
 mcp-zen                                             # runs in the foreground
 ```
