@@ -2,6 +2,7 @@
   "name": "mcp-zen",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "license": "MIT",
   "author": "Mike Smullin <mike@smullindesign.com>",
   "repository": {
@@ -15,6 +16,10 @@
     "firefox-extension"
   ],
   "scripts": {
-    "build": "npm run build --workspace common && npm run build --workspace mcp-server && npm run build --workspace firefox-extension"
+    "build": "npm run build --workspace common && npm run build --workspace mcp-server && npm run build --workspace firefox-extension",
+    "test": "npm run build && node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

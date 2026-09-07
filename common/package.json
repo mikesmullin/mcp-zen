@@ -2,13 +2,10 @@
   "name": "@mcp-zen/common",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "type": "module",
+  "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "build": "tsc"
-  },
-  "devDependencies": {
-    "typescript": "~5.7.3"
+    "build": "node ../scripts/build-js.js common"
   }
 }

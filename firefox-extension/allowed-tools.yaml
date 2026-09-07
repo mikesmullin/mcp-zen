@@ -1,24 +1,49 @@
-# Static allow-list of mcp-zen commands this extension will execute.
-# Edit this list and rebuild the extension (npm run build) to change what
-# an MCP client is permitted to do to this browser. There is no runtime
-# toggle UI by design -- this file is the single source of truth.
+# Internal browser operations; public MCP tools are pinned in common/agent-browser/*.json.
+# Edit this list and rebuild to restrict what the extension may execute.
 enabled:
-  - list-tabs
-  - navigate
-  - new-tab
-  - close-tab
-  - activate-tab
+  - tab_list
+  - tab_new
+  - tab_switch
+  - tab_close
+  - session_create
+  - session_remove
+  - window_new
+  - open
+  - back
+  - forward
+  - reload
   - snapshot
   - screenshot
-  - get-page-text
-  - get-form-fields
+  - read_page
+  - get_text
+  - get_url
+  - get_title
+  - get_value
+  - get_attr
+  - is_visible
+  - is_enabled
+  - is_checked
   - click
-  - click-text
   - fill
-  - select-option
+  - type
+  - press
   - check
-  - fill-form
+  - uncheck
+  - select
   - scroll
-  - press-key
-  - evaluate
-  - wait-for
+  - scroll_into_view
+  - hover
+  - find
+  - tap
+  - swipe
+  - eval
+  - wait_for_selector
+  - wait_for_text
+  - wait_for_load
+  - wait_for_url
+  - frame_switch
+  - frame_info
+  - dialog_status
+  - dialog_accept
+  - dialog_dismiss
+  - console

@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Agent compatibility fixture</title>
+<style>body{font:16px sans-serif} #scroller{width:140px;height:70px;overflow:auto} #inside{width:700px;height:500px} .hidden{display:none}</style></head>
+<body>
+<h1>Compatibility fixture</h1><p>Shared deterministic page for mcp-zen and agent-browser.</p>
+<form id="form"><label for="name">Full name</label><input id="name" name="name"><label for="notes">Notes</label><textarea id="notes"></textarea>
+<button id="save" type="submit">Save</button></form>
+<button id="duplicate-a">Duplicate</button><button id="duplicate-b">Duplicate</button>
+<label><input id="check" type="checkbox"> Subscribe</label>
+<select id="select" aria-label="Colors" multiple size="3"><option value="red">Red</option><option value="blue">Blue</option><option value="green">Green</option></select>
+<a id="link" href="/second">Second page</a><button id="disabled" disabled>Unavailable</button>
+<div id="scroller"><div id="inside">Scrollable box</div></div>
+<div id="menu"><button id="menu-btn">Menu</button><div id="menu-panel" hidden>Hidden until hover</div></div>
+<button id="place-order" data-testid="place-order">Place order</button>
+<img id="img-nibblers" alt="Snyder's of Hanover Sourdough Nibblers Pretzels, 16 Oz" width="40" height="40">
+<img id="img-honey" alt="Snyder's of Hanover Honey Mustard &amp; Onion Flavored Pretzel Pieces, 18 Oz" width="40" height="40">
+<div id="cover-wrap" style="position:relative;width:120px;height:40px">
+<button id="covered" type="button">Covered</button>
+<div id="blocker" style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div>
+</div>
+<iframe id="pay-frame" title="Payment" src="/frame"></iframe>
+<div id="status" role="status">Ready</div><div class="hidden"><button>Hidden button</button></div>
+<script>
+window.events = [];
+for (const type of ['input','change','keydown','keyup']) document.addEventListener(type, e => window.events.push({type, target:e.target.id, trusted:e.isTrusted}));
+document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); document.getElementById('status').textContent = 'Saved'; });
+document.getElementById('duplicate-a').onclick = () => document.getElementById('status').textContent = 'A';
+document.getElementById('duplicate-b').onclick = () => document.getElementById('status').textContent = 'B';
+document.getElementById('place-order').onclick = () => document.getElementById('status').textContent = 'Ordered';
+const menu = document.getElementById('menu');
+menu.addEventListener('mouseenter', () => document.getElementById('menu-panel').hidden = false);
+menu.addEventListener('mouseover', () => document.getElementById('menu-panel').hidden = false);
+</script>
+</body></html>

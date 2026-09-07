@@ -3,3 +3,5 @@ dist/
 .env
 SCRATCH.md
 bin/
+/tmp/
+screenshots/

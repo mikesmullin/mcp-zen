@@ -23,15 +23,6 @@
     h1 { margin-top: 0; }
     h2 { margin-top: 0; font-size: 16px; }
 
-    .secret-value {
-      font-family: monospace;
-      word-break: break-all;
-      background-color: #f5f5f5;
-      padding: 10px;
-      border-radius: 4px;
-      border: 1px solid #e0e0e0;
-    }
-
     button {
       margin-top: 10px;
       background-color: #4285f4;
@@ -67,14 +58,6 @@
   <p>Configuration for the mcp-zen browser extension.</p>
 
   <div class="section">
-    <h2>Secret Key</h2>
-    <p>Generated on install. Configure the MCP server with the same value as <code>EXTENSION_SECRET</code>:</p>
-    <div class="secret-value" id="secret-display">Loading...</div>
-    <button id="copy-button">Copy to Clipboard</button>
-    <div class="status" id="secret-status"></div>
-  </div>
-
-  <div class="section">
     <h2>WebSocket Ports</h2>
     <p>Ports the extension listens on for the MCP server (comma-separated). Changing this reloads the extension.</p>
     <input type="text" id="ports-input" placeholder="8765">
@@ -91,7 +74,14 @@
   </div>
 
   <div class="section">
-    <h2>Enabled Tools</h2>
+    <h2>Isolated Sessions (optional)</h2>
+    <p>Named agent sessions use separate Firefox containers. This needs the cookies permission so tabs can be created in a container. The default session still uses your existing personal tabs.</p>
+    <button id="grant-containers">Enable isolated sessions</button>
+    <div class="status" id="containers-status"></div>
+  </div>
+
+  <div class="section">
+    <h2>Enabled Browser Operations</h2>
     <p>Static allow-list from <code>allowed-tools.yaml</code> (edit that file and rebuild to change):</p>
     <ul class="tool-list" id="tool-list"></ul>
   </div>
