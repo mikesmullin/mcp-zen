@@ -17,7 +17,7 @@ browser internals.
 |---|---|
 | `tools_profiles` | Reports `core` only, plus the pinned upstream revision |
 | `open` | Navigates the session's bound tab (`about:blank` if URL omitted). Launch flags (`headed`, `webgpu`, `webmcp`) error |
-| `read` | Active-tab HTML or HTTP(S) fetch; Readability + markdown; outline/filter; ancestor `llms.txt` |
+| `read` | Live tab HTML (Readability). `url` navigates that tab if different, then waits for load. `llms` still HTTP-fetches ancestor llms.txt |
 | `snapshot` | DOM accessibility approximation with `@eN` refs (not Chromium `Accessibility.getFullAXTree`) |
 | `click` / `fill` / `type` / `press` / `check` / `uncheck` / `select` / `scroll` | Synthetic DOM events; `@ref` or unique CSS |
 | `wait_ms` | Server-side timer |
@@ -110,7 +110,7 @@ Page-provided tools. Doable in-page, not implemented.
   are rejected. JPEG/annotate/path are implemented.
 - Refs are per mcp-zen session + tab + document, not Chromium backend node
   ids. Navigation invalidates them.
-- `read` markdown/llms behavior is a Node implementation, not the Rust CLI.
+- `read` uses the tab DOM (not a cookie-less Node fetch). `llms.txt` discovery still fetches from Node.
 - Concurrent MCP clients share one extension socket; isolation is logical
   (session queues + containers), not process isolation.
 

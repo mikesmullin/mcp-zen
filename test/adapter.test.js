@@ -86,3 +86,17 @@ test("close all waits for existing session work and gates later work", async () 
   assert.equal(api.tabs.length, 2);
   assert.equal(api.tabs[1].cookieStoreId, "firefox-container-2");
 });
+
+test("read with a different url navigates the live tab instead of fetching anonymously", async () => {
+  const { api, call } = setup();
+  data(await call("get_url"));
+  const before = api.calls.filter((item) => item.cmd === "open").length;
+  data(await call("read"));
+  assert.equal(api.calls.filter((item) => item.cmd === "open").length, before);
+  data(await call("read", { url: "https://www.youtube.com/feed/subscriptions" }));
+  const opens = api.calls.filter((item) => item.cmd === "open");
+  assert.equal(opens.at(-1).args.url, "https://www.youtube.com/feed/subscriptions");
+  assert.ok(api.calls.some((item) => item.cmd === "read_page"));
+  data(await call("read", { url: "https://www.youtube.com/feed/subscriptions" }));
+  assert.equal(api.calls.filter((item) => item.cmd === "open" && item.args.url === "https://www.youtube.com/feed/subscriptions").length, 1);
+});

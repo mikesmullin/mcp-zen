@@ -75,7 +75,7 @@ ignored.
 |---|---|
 | `agent_browser_tools_profiles` | `core` only in this version |
 | `agent_browser_open` | Navigate bound tab; no browser launch flags |
-| `agent_browser_read` | Tab HTML or HTTP(S); markdown / outline / `llms.txt` |
+| `agent_browser_read` | Live tab HTML; `url` navigates first if needed. `llms` fetches llms.txt |
 | `agent_browser_snapshot` | A11y-style tree + `@eN` refs |
 | `agent_browser_click` | `@ref` or unique CSS; `newTab` opens the link |
 | `agent_browser_fill` / `type` | `text` (not `value`); synthetic input |

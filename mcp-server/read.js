@@ -62,6 +62,17 @@ function selectSections(content, { filter, outline }, headings = []) {
   return result;
 }
 
+export function urlsMatch(a, b) {
+  const canon = (value) => {
+    const url = new URL(normalizeUrl(value));
+    url.hash = "";
+    let href = url.href;
+    if (url.pathname !== "/" && href.endsWith("/")) href = href.slice(0, -1);
+    return href;
+  };
+  try { return canon(a) === canon(b); } catch { return a === b; }
+}
+
 export async function readContent(args, { activePage, signal, deadline }) {
   if (args.readTimeoutMs !== undefined && args.readTimeoutMs <= 0) throw new Error("readTimeoutMs must be positive");
   const timeout = Math.max(1, Math.min(args.readTimeoutMs ?? 30000, deadline - Date.now(), 2147483647));
@@ -69,13 +80,15 @@ export async function readContent(args, { activePage, signal, deadline }) {
   const timer = setTimeout(() => controller.abort(new Error("Read timed out")), timeout);
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   try {
-    let page;
-    if (!args.url) page = await activePage();
-    let url = args.url ? normalizeUrl(args.url) : page.url;
+    // Page HTML always comes from the live tab (cookies, SPA DOM). Never fetch the
+    // document from Node — that is a different, logged-out origin.
+    const page = await activePage();
+    let url = page.url;
     let fetched;
     if (args.llms) {
-      if (!/^https?:/.test(url)) throw new Error("llms discovery requires an HTTP(S) URL");
-      const candidate = new URL(url);
+      const origin = args.url ? normalizeUrl(args.url) : url;
+      if (!/^https?:/.test(origin)) throw new Error("llms discovery requires an HTTP(S) URL");
+      const candidate = new URL(origin);
       candidate.search = "";
       candidate.hash = "";
       let directory = new URL(".", candidate);
@@ -87,18 +100,17 @@ export async function readContent(args, { activePage, signal, deadline }) {
         if (parent.href === directory.href) throw new Error("No llms file found in the URL's ancestors");
         directory = parent;
       }
-    } else if (args.url) {
-      if (!/^https?:/.test(url)) throw new Error("URL fetching requires HTTP(S)");
-      fetched = await fetchText(url, combined);
-      if (!fetched.ok) throw new Error(`Read failed: HTTP ${fetched.status}`);
     }
     const contentType = fetched?.contentType || "text/html";
-    if (args.requireMd && !/^text\/markdown\b/i.test(contentType)) throw new Error("Expected Content-Type: text/markdown");
+    if (args.requireMd && !/^text\/markdown\b/i.test(contentType) && /<\s*(html|body|div|p)\b/i.test(page.html || "")) {
+      throw new Error("Expected Content-Type: text/markdown");
+    }
     const body = fetched?.body ?? page.html;
     if (Buffer.byteLength(body) > MAX_BYTES) throw new Error("Read response exceeds 10 MiB");
     url = fetched?.url || url;
     let result = { title: page?.title || "", content: body, headings: [] };
-    if (!args.raw && /(?:text\/html|application\/xhtml\+xml)/i.test(contentType)) result = extract(body, url);
+    const looksHtml = /<\s*(html|body|div|p|h[1-6]|article)\b/i.test(body);
+    if (!args.raw && !args.llms && looksHtml) result = extract(body, url);
     const { headings, ...publicResult } = result;
     publicResult.content = selectSections(result.content, args, headings);
     return { ...publicResult, url, contentType };

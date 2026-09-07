@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { coreTools, extraTools, enabledTools, upstream } from "@mcp-zen/common";
-import { normalizeUrl, readContent } from "./read.js";
+import { normalizeUrl, readContent, urlsMatch } from "./read.js";
 
 export class CapabilityError extends Error {
   code = "UNSUPPORTED_CAPABILITY";
@@ -219,7 +219,18 @@ export class AgentBrowserAdapter {
       return toolResult({ closed: true });
     }
     if (cmd === "read") {
-      return toolResult(await readContent(args, { ...context, activePage: () => this.page("read_page", {}, session, context) }));
+      const tabId = await this.current(session, context);
+      if (args.url && !args.llms) {
+        const target = normalizeUrl(args.url);
+        const current = await this.request("get_url", { tabId }, context);
+        if (!urlsMatch(current.url, target)) {
+          session.refs.clear();
+          session.frameId = 0;
+          const navigated = await this.request("open", { tabId, url: target }, context);
+          Object.assign(session.tabs.get(tabId), navigated);
+        }
+      }
+      return toolResult(await readContent(args, { ...context, activePage: () => this.page("read_page", {}, session, context, tabId) }));
     }
     if (cmd === "window_new") {
       await this.list(session, context);
