@@ -56,7 +56,7 @@ test("live Firefox: temporary extension + real MCP core workflow in a disposable
   await server.connect(serverTransport); await client.connect(clientTransport);
   t.after(async () => { await client.close(); await server.close(); });
   const call = async (name, args = {}) => {
-    const result = await client.callTool({ name: `agent_browser_${name}`, arguments: { ...args, timeoutMs: 10000 } });
+    const result = await client.callTool({ name: `zen_browser_${name}`, arguments: { ...args, timeoutMs: 10000 } });
     assert.equal(result.isError, false, `${name}: ${result.content[0].text}`);
     return result.structuredContent.response.data;
   };
@@ -103,7 +103,7 @@ test("live Firefox: temporary extension + real MCP core workflow in a disposable
   assert.ok((logs.messages || []).some((m) => String(m.text).includes("mcp-zen-console")), JSON.stringify(logs));
   await call("console", { clear: true });
   await call("dialog_status");
-  const stale = await client.callTool({ name: "agent_browser_fill", arguments: { selector: `@${inputRef}`, text: "wrong", timeoutMs: 1000 } });
+  const stale = await client.callTool({ name: "zen_browser_fill", arguments: { selector: `@${inputRef}`, text: "wrong", timeoutMs: 1000 } });
   assert.equal(stale.isError, true);
   await call("back"); await call("forward"); await call("reload");
   await call("wait_for_load", { state: "load" });

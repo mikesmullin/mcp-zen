@@ -19,7 +19,7 @@ export class MessageHandler {
       throw Object.assign(new Error(
         "AUTOMATION_PERMISSION_MISSING: mcp-zen is loaded but browser automation is off. " +
         "Open the mcp-zen extension options and enable browser automation (grants <all_urls>). " +
-        "Tab URL/title/list can still work; snapshot, click, zen_media_*, and other page tools cannot. " +
+        "Tab URL/title/list can still work; snapshot, click, zen_browser_media_*, and other page tools cannot. " +
         "This is not the same as the add-on being missing."
       ), { code: "AUTOMATION_PERMISSION_MISSING" });
     }

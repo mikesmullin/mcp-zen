@@ -36,7 +36,7 @@ export function installRuntime(win = window) {
       return doc.evaluate(selector.slice(6), doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
     }
     try { return doc.querySelector(selector); }
-    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS, xpath=..., or @eN snapshot refs; Playwright :has-text()/:text() selectors are not supported. agent_browser_find with action="text" reads without clicking (its default action is click).`, "INVALID_SELECTOR"); }
+    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS, xpath=..., or @eN snapshot refs; Playwright :has-text()/:text() selectors are not supported. zen_browser_find with action="text" reads without clicking (its default action is click).`, "INVALID_SELECTOR"); }
   }
   function resolve(selector, context, allowMissing = false) {
     if (typeof selector !== "string" || !selector.trim()) fail("A nonempty selector is required", "INVALID_SELECTOR");
@@ -323,12 +323,12 @@ export function installRuntime(win = window) {
   }
   function queryAll(selector, root = doc) {
     try { return [...root.querySelectorAll(selector)]; }
-    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS; text filters are available through zen_locate.`, 'INVALID_SELECTOR'); }
+    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS; text filters are available through zen_browser_locate.`, 'INVALID_SELECTOR'); }
   }
   function selectUnique(selector, context) {
     if (/^@?e\d+$/.test(selector) || selector.startsWith('xpath=')) return resolve(selector, context);
     const matches = queryAll(selector);
-    if (matches.length !== 1) fail(`Expected one target for ${selector}, found ${matches.length}. Use zen_locate to disambiguate.`, matches.length ? 'AMBIGUOUS_TARGET' : 'ELEMENT_ERROR');
+    if (matches.length !== 1) fail(`Expected one target for ${selector}, found ${matches.length}. Use zen_browser_locate to disambiguate.`, matches.length ? 'AMBIGUOUS_TARGET' : 'ELEMENT_ERROR');
     return matches[0];
   }
   function describeElement(el, context, refs) {
@@ -398,7 +398,7 @@ export function installRuntime(win = window) {
     }
     walk(scope, 0);
     const rootMatchCount = args.selector && !/^@?e\d+$/.test(args.selector) && !args.selector.startsWith('xpath=') ? queryAll(args.selector).length : 1;
-    const note = rootMatchCount > 1 ? `Note: selector matched ${rootMatchCount} roots; snapshot shows only the first subtree. Use zen_locate for all candidates.\n` : '';
+    const note = rootMatchCount > 1 ? `Note: selector matched ${rootMatchCount} roots; snapshot shows only the first subtree. Use zen_browser_locate for all candidates.\n` : '';
     return { data: { snapshot: note + (lines.join("\n") || "(empty)"), refs, documentId, nextRef: session.nextRef, rootMatchCount }, annotations };
   }
 

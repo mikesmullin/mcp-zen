@@ -38,7 +38,7 @@ export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadlin
   }
   function one(selector, context) {
     const all = candidates(selector, context);
-    if (all.length !== 1) fail(`Expected one media element, found ${all.length}. Use zen_media_state/zen_locate and select the intended media ref.`, all.length ? 'AMBIGUOUS_TARGET' : 'ELEMENT_ERROR');
+    if (all.length !== 1) fail(`Expected one media element, found ${all.length}. Use zen_browser_media_state/zen_browser_locate and select the intended media ref.`, all.length ? 'AMBIGUOUS_TARGET' : 'ELEMENT_ERROR');
     return all[0];
   }
   async function until(media, predicate, deadline, message) {
@@ -78,7 +78,7 @@ export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadlin
           new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Media play timed out; inspect state before retrying'), { code: 'VERIFICATION_FAILED' })), Math.max(1, deadline - Date.now())); }),
         ]);
       } catch (error) {
-        fail(`Playback not verified (${error.name}): ${error.message}. Inspect zen_media_state; autoplay may require a real user gesture.`, error.code === 'VERIFICATION_FAILED' ? error.code : 'PLAYBACK_REJECTED');
+        fail(`Playback not verified (${error.name}): ${error.message}. Inspect zen_browser_media_state; autoplay may require a real user gesture.`, error.code === 'VERIFICATION_FAILED' ? error.code : 'PLAYBACK_REJECTED');
       } finally { clearTimeout(timer); }
       const startedAt = media.currentTime;
       await until(media, () => !media.paused && media.currentTime > startedAt + 0.05, deadline, 'Playback did not advance');

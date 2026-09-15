@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { coreTools, extraTools, zenTools, enabledTools, upstream } from "@mcp-zen/common";
+import { coreTools, extraTools, zenTools, enabledTools, upstream, asZenBrowserName } from "@mcp-zen/common";
 import { normalizeUrl, readContent, urlsMatch } from "./read.js";
 
 export class CapabilityError extends Error {
@@ -48,7 +48,7 @@ export class AgentBrowserAdapter {
   }
 
   async call(name, args, { signal: externalSignal } = {}) {
-    const cmd = name.replace(/^(agent_browser_|zen_)/, "");
+    const cmd = name.replace(/^zen_browser_/, "");
     const controller = new AbortController();
     const timeout = Math.min(args.timeoutMs ?? 120000, 2147483647);
     const deadline = Date.now() + timeout;
@@ -64,9 +64,9 @@ export class AgentBrowserAdapter {
       if (cmd === "tools_profiles") return toolResult({
         activeProfiles: ["core", "checkout", "zen"],
         profiles: [
-          { name: "zen", enabled: true, tools: zenTools.map((tool) => tool.name), description: "CSP-independent verified media controls, read-only locating, reveal and relative input." },
-          { name: "core", enabled: true, tools: coreTools.map((tool) => tool.name), description: "Agent-browser core API on attached Firefox. DOM-derived snapshots and synthetic input; see docs/parity.md." },
-          { name: "checkout", enabled: true, tools: extraTools.map((tool) => tool.name), description: "Frames, find/hover, dialogs, URL waits, element queries, new windows, tap/swipe, console." },
+          { name: "zen", enabled: true, tools: zenTools.map((tool) => asZenBrowserName(tool.name)), description: "CSP-independent verified media controls, read-only locating, reveal and relative input." },
+          { name: "core", enabled: true, tools: coreTools.map((tool) => asZenBrowserName(tool.name)), description: "Core browser API on attached Firefox. DOM-derived snapshots and synthetic input; see docs/parity.md." },
+          { name: "checkout", enabled: true, tools: extraTools.map((tool) => asZenBrowserName(tool.name)), description: "Frames, find/hover, dialogs, URL waits, element queries, new windows, tap/swipe, console." },
         ],
         tools: enabledTools.map((tool) => tool.name),
         upstream: { revision: upstream.revision, version: upstream.version },
@@ -128,7 +128,7 @@ export class AgentBrowserAdapter {
   async current(session, context) {
     const tabs = await this.list(session, context);
     if (session.tabId !== null) {
-      if (!session.tabs.has(session.tabId)) throw Object.assign(new Error("Session tab was closed; use agent_browser_tab_switch or agent_browser_tab_new"), { code: "TAB_GONE" });
+      if (!session.tabs.has(session.tabId)) throw Object.assign(new Error("Session tab was closed; use zen_browser_tab_switch or zen_browser_tab_new"), { code: "TAB_GONE" });
       return session.tabId;
     }
     if (tabs.length) session.tabId = (tabs.find((tab) => tab.active) || tabs[0]).id;

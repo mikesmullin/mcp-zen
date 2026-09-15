@@ -3,12 +3,12 @@
 A persistent MCP HTTP server paired with a Zen/Firefox extension that lets any
 MCP client remote-control your **already-running** browser.
 
-The public tool surface is the **agent-browser core** API (`agent_browser_*`):
-same names, titles, descriptions, JSON Schema, and annotations as
+The public tool surface is **`zen_browser_*`**: one prefix for core browsing,
+frames, and additive media/locate tools. Schemas were captured from
 [agent-browser](https://github.com/vercel-labs/agent-browser) `0.36.0` (pinned
-in `common/agent-browser/`). The backend is your attached Firefox/Zen window,
-not a managed Chromium process. See [docs/parity.md](docs/parity.md) for what
-that distinction means.
+in `common/agent-browser/`) then renamed. The backend is your attached
+Firefox/Zen window, not a managed Chromium process. See
+[docs/parity.md](docs/parity.md).
 
 The server is one long-lived process. The extension's WebSocket stays up
 independently of short-lived MCP client sessions.
@@ -58,10 +58,10 @@ mcp-zen
 Point an MCP client at `http://localhost:8791/mcp`.
 
 ```bash
-node mcpcall.mjs agent_browser_tab_list '{}'
-node mcpcall.mjs agent_browser_open '{"url":"https://example.com"}'
-node mcpcall.mjs agent_browser_snapshot '{}'
-node mcpcall.mjs agent_browser_click '{"selector":"@e1"}'
+node mcpcall.mjs zen_browser_tab_list '{}'
+node mcpcall.mjs zen_browser_open '{"url":"https://example.com"}'
+node mcpcall.mjs zen_browser_snapshot '{}'
+node mcpcall.mjs zen_browser_click '{"selector":"@e1"}'
 ```
 
 ## Tools
@@ -73,33 +73,33 @@ ignored.
 
 | Tool | Notes |
 |---|---|
-| `agent_browser_tools_profiles` | `core` only in this version |
-| `agent_browser_open` | Navigate bound tab; no browser launch flags |
-| `agent_browser_read` | Live tab HTML; `url` navigates first if needed. `llms` fetches llms.txt |
-| `agent_browser_snapshot` | A11y-style tree + `@eN` refs |
-| `agent_browser_click` | `@ref`, bare `eN`, or first CSS match; `newTab` opens the link |
-| `agent_browser_fill` / `type` | `text` (not `value`); synthetic input |
-| `agent_browser_press` | Chords like `Control+a`; untrusted events |
-| `agent_browser_check` / `uncheck` / `select` | `select` takes `values: string[]` |
-| `agent_browser_scroll` | `up\|down\|left\|right`, default 300px |
-| `agent_browser_wait_ms` | Required `ms` ≥ 0 |
-| `agent_browser_wait_for_selector` / `_text` / `_load` | `waitTimeoutMs`; no `networkidle` |
-| `agent_browser_screenshot` | Path + image content; `fullPage` / `selector` / `annotate` |
-| `agent_browser_get_text` | Requires `selector` |
-| `agent_browser_get_url` / `get_title` | Bound tab |
-| `agent_browser_eval` | Page-realm JS |
-| `agent_browser_tab_new` / `tab_list` / `tab_switch` / `tab_close` | `tN` / label / `firefox:<id>` |
-| `agent_browser_back` / `forward` / `reload` | |
-| `agent_browser_close` | Owned tabs/containers only — not your browser |
-| `agent_browser_frame_switch` / `frame_main` | Iframes (Stripe/PayPal/3DS) |
-| `agent_browser_find` | Click/fill by role, text, label, testid, … |
-| `agent_browser_wait_for_url` | Substring, glob, or `/regex/` |
-| `agent_browser_hover` / `scroll_into_view` | |
-| `agent_browser_get_value` / `get_attr` / `is_visible` / `is_enabled` / `is_checked` | |
-| `agent_browser_dialog_*` | `alert`/`confirm`/`prompt` hooked after the runtime is installed |
-| `agent_browser_window_new` | |
-| `agent_browser_tap` / `swipe` | Synthetic touch |
-| `agent_browser_console` | `{ clear?: boolean }` — page console buffer |
+| `zen_browser_tools_profiles` | `core` only in this version |
+| `zen_browser_open` | Navigate bound tab; no browser launch flags |
+| `zen_browser_read` | Live tab HTML; `url` navigates first if needed. `llms` fetches llms.txt |
+| `zen_browser_snapshot` | A11y-style tree + `@eN` refs |
+| `zen_browser_click` | `@ref`, bare `eN`, or first CSS match; `newTab` opens the link |
+| `zen_browser_fill` / `type` | `text` (not `value`); synthetic input |
+| `zen_browser_press` | Chords like `Control+a`; untrusted events |
+| `zen_browser_check` / `uncheck` / `select` | `select` takes `values: string[]` |
+| `zen_browser_scroll` | `up\|down\|left\|right`, default 300px |
+| `zen_browser_wait_ms` | Required `ms` ≥ 0 |
+| `zen_browser_wait_for_selector` / `_text` / `_load` | `waitTimeoutMs`; no `networkidle` |
+| `zen_browser_screenshot` | Path + image content; `fullPage` / `selector` / `annotate` |
+| `zen_browser_get_text` | Requires `selector` |
+| `zen_browser_get_url` / `get_title` | Bound tab |
+| `zen_browser_eval` | Page-realm JS |
+| `zen_browser_tab_new` / `tab_list` / `tab_switch` / `tab_close` | `tN` / label / `firefox:<id>` |
+| `zen_browser_back` / `forward` / `reload` | |
+| `zen_browser_close` | Owned tabs/containers only — not your browser |
+| `zen_browser_frame_switch` / `frame_main` | Iframes (Stripe/PayPal/3DS) |
+| `zen_browser_find` | Click/fill by role, text, label, testid, … |
+| `zen_browser_wait_for_url` | Substring, glob, or `/regex/` |
+| `zen_browser_hover` / `scroll_into_view` | |
+| `zen_browser_get_value` / `get_attr` / `is_visible` / `is_enabled` / `is_checked` | |
+| `zen_browser_dialog_*` | `alert`/`confirm`/`prompt` hooked after the runtime is installed |
+| `zen_browser_window_new` | |
+| `zen_browser_tap` / `swipe` | Synthetic touch |
+| `zen_browser_console` | `{ clear?: boolean }` — page console buffer |
 
 ### Reliable targeting
 
@@ -109,7 +109,7 @@ ignored.
 - Selectors use standard CSS (first match), `xpath=...`, or snapshot refs—not
   Playwright `:has-text()` / `:text()`. Scope to the intended post/player rather
   than using a page-wide `[role=slider]` (which can also match volume).
-- `agent_browser_find` **defaults to click**. Use `action: "text"` to read
+- `zen_browser_find` **defaults to click**. Use `action: "text"` to read
   without activating the match. Snapshot queries do not click.
 - `eval` may be blocked by a site's CSP. Ordinary DOM tools still work.
 - Hover is synthetic and may not reveal CSS-only controls. A click response
@@ -117,8 +117,8 @@ ignored.
 - MCP clients must forward screenshot image content, not just its filesystem
   path. An image placeholder is not visual evidence.
 - Additive `zen_*` tools (locate, reveal, click_at, set_range, media_*) are
-  Firefox capabilities, not agent-browser. Prefer `zen_media_*` on CSP-strict
-  video pages instead of `eval`. `zen_locate` never clicks; `agent_browser_find` still defaults to click.
+  Firefox capabilities, not agent-browser. Prefer `zen_browser_media_*` on CSP-strict
+  video pages instead of `eval`. `zen_browser_locate` never clicks; `zen_browser_find` still defaults to click.
 
 Omit `session` to use the default binding (a personal tab). Named
 `session`/`namespace` values use Firefox containers once that permission is

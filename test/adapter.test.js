@@ -6,7 +6,7 @@ import { MockBrowser } from "./helpers/mock-browser.js";
 const setup = () => {
   const api = new MockBrowser();
   const adapter = new AgentBrowserAdapter(api);
-  const call = (name, args = {}) => adapter.call(`agent_browser_${name}`, args);
+  const call = (name, args = {}) => adapter.call(`zen_browser_${name}`, args);
   return { api, adapter, call };
 };
 const data = (result) => { assert.equal(result.isError, false, result.content[0].text); return result.structuredContent.response.data; };

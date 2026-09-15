@@ -29,6 +29,15 @@ const extraTools = extraNames.map((name) => {
   if (!tool) throw new Error(`Pinned schema missing ${name}`);
   return tool;
 });
-const enabledTools = [...coreTools, ...extraTools, ...zenTools];
+// Public MCP names are zen_browser_* (one prefix). Pinned JSON stays agent_browser_* for provenance.
+export function asZenBrowserName(name) {
+  if (name.startsWith("agent_browser_")) return `zen_browser_${name.slice("agent_browser_".length)}`;
+  if (name.startsWith("zen_") && !name.startsWith("zen_browser_")) return `zen_browser_${name.slice("zen_".length)}`;
+  return name;
+}
+function asZenBrowserTool(tool) {
+  return { ...tool, name: asZenBrowserName(tool.name) };
+}
+const enabledTools = [...coreTools, ...extraTools, ...zenTools].map(asZenBrowserTool);
 
 export { coreTools, allTools, extraTools, zenTools, enabledTools, upstream };

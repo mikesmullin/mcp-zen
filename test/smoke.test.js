@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { coreTools, allTools, enabledTools, extraTools, upstream } from "@mcp-zen/common";
+import { coreTools, allTools, enabledTools, extraTools, upstream, asZenBrowserName } from "@mcp-zen/common";
 import { MockBrowser } from "./helpers/mock-browser.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -55,8 +55,8 @@ for (const entry of ["mcp-server/server.js", "mcp-server/dist/server.js"]) {
     assert.equal(extraTools.length, 18);
     assert.equal(allTools.length, 156);
     assert.deepEqual(coreTools.map((tool) => tool.name), upstream.profiles.core);
-    assert.ok(extraTools.every((tool) => listed.some((item) => item.name === tool.name)));
-    const call = (name, args = {}) => client.callTool({ name: `agent_browser_${name}`, arguments: args });
+    assert.ok(extraTools.every((tool) => listed.some((item) => item.name === asZenBrowserName(tool.name))));
+    const call = (name, args = {}) => client.callTool({ name: `zen_browser_${name}`, arguments: args });
     const data = (result) => { assert.equal(result.isError, false, result.content[0].text); assert.equal(result.structuredContent.exitCode, 0); return result.structuredContent.response.data; };
     assert.equal(data(await call("tab_list")).tabs[0].id, "t1");
     assert.equal(data(await call("open", { url: "example.org" })).url, "https://example.org/");
