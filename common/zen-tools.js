@@ -36,4 +36,5 @@ export const zenTools = [
   }, ['selector'], false, { oneOf: [{ required: ['seconds'], not: { required: ['fraction'] } }, { required: ['fraction'], not: { required: ['seconds'] } }] }),
   tool('media_play', 'Play one unambiguous HTML video/audio and verify that media time advances. Exposes autoplay rejection or stalled playback as an error. Does not change mute/volume.', { selector, waitTimeoutMs }, ['selector']),
   tool('media_pause', 'Pause one unambiguous HTML video/audio and verify paused state. Does not seek or change volume.', { selector }, ['selector']),
+  tool('media_fullscreen', 'Enter or exit fullscreen for one unambiguous HTML video via the element Fullscreen API (not hunting a page Full screen button). on=true/false, or omit to toggle. Verifies document.fullscreenElement. Prefer this over clicking player chrome; hover+click races hide those buttons.', { selector, on: { type: 'boolean', description: 'true=enter, false=exit. Omit to toggle.' }, waitTimeoutMs }, ['selector']),
 ];

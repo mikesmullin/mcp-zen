@@ -422,7 +422,7 @@ export function installRuntime(win = window) {
       const refs = {};
       let data;
       if (cmd.startsWith('media_')) {
-        const mediaTool = createMediaTools(win, { selectUnique, refFor: (el) => rememberElement(el, context, refs), fail, checkDeadline: checkWork, sleep });
+        const mediaTool = createMediaTools(win, { selectUnique, refFor: (el) => rememberElement(el, context, refs), fail, checkDeadline: checkWork, sleep, hover, clickAt });
         data = await mediaTool(cmd, args, context);
       } else if (cmd === 'locate') {
         const root = args.scope ? selectUnique(args.scope, context) : doc;

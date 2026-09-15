@@ -9,6 +9,7 @@ enabled:
   - media_seek
   - media_play
   - media_pause
+  - media_fullscreen
   - tab_list
   - tab_new
   - tab_switch

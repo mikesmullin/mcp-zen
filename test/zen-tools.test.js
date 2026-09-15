@@ -84,3 +84,22 @@ test('media failure cases: unknown duration, unseekable target, autoplay rejecti
   media.duration = 10; media.seeking = true; media.seekable = { length: 1, start: () => 0, end: () => 10 };
   await assert.rejects(() => run('media_seek', { selector: 'video', seconds: 5 }, { deadline: Date.now() - 1 }), { code: 'VERIFICATION_FAILED' });
 });
+
+test('media_fullscreen uses the element API and verifies document.fullscreenElement', async () => {
+  const doc = { fullscreenElement: null, exitFullscreen: async function exit() { doc.fullscreenElement = null; } };
+  const media = {
+    isConnected: true, localName: 'video', currentTime: 1, duration: 10, paused: true,
+    ended: false, seeking: false, readyState: 4, networkState: 1, muted: true, volume: 1,
+    playbackRate: 1, seekable: { length: 1, start: () => 0, end: () => 10 }, poster: '', error: null,
+    closest: () => null, parentElement: null,
+    requestFullscreen: async function req() { doc.fullscreenElement = media; },
+  };
+  const fail = (message, code) => { throw Object.assign(new Error(message), { code }); };
+  const run = createMediaTools({ document: doc }, { selectUnique: () => media, refFor: () => 'e1', fail, checkDeadline: () => {}, sleep: async () => {} });
+  const entered = await run('media_fullscreen', { selector: 'video', on: true }, { deadline: Date.now() + 1000 });
+  assert.equal(entered.verified, true);
+  assert.equal(entered.fullscreen, true);
+  assert.equal(entered.method, 'api');
+  const left = await run('media_fullscreen', { selector: 'video', on: false }, { deadline: Date.now() + 1000 });
+  assert.equal(left.fullscreen, false);
+});
