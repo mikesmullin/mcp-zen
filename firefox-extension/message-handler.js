@@ -4,6 +4,14 @@ export class MessageHandler {
     this.browser = api;
     this.allowed = allowed;
     this.captureQueue = Promise.resolve();
+    this.cancelled = new Set();
+  }
+
+  async cancel(req) {
+    this.cancelled.add(req.correlationId);
+    if (Number.isInteger(req.args?.tabId)) {
+      await this.browser.tabs.executeScript(req.args.tabId, { frameId: req.args.frameId || 0, code: `window.__mcpZenRuntime?.cancel(${JSON.stringify(req.correlationId)})` }).catch(() => {});
+    }
   }
 
   async permission() {
@@ -24,6 +32,7 @@ export class MessageHandler {
         return { ok: false, error: { code: error.code || "PAGE_ERROR", message: String(error.message || error) } };
       }
     })()`;
+    if (this.cancelled.has(context.requestId)) throw Object.assign(new Error('Tool cancelled before dispatch'), { code: 'CANCELLED' });
     const [result] = await this.browser.tabs.executeScript(args.tabId, { code, frameId });
     if (!result?.ok) throw Object.assign(new Error(result?.error?.message || "Page returned no result"), { code: result?.error?.code || "PAGE_ERROR" });
     return result.data;
@@ -161,7 +170,7 @@ export class MessageHandler {
     const { cmd, args = {}, deadline } = req;
     if (!this.allowed.has(cmd)) throw new Error(`Command '${cmd}' is disabled (see allowed-tools.yaml)`);
     if (!Number.isFinite(deadline) || Date.now() >= deadline) throw new Error("Tool deadline exceeded");
-    const context = { sessionId: args.sessionId, documentId: args.documentId, deadline };
+    const context = { sessionId: args.sessionId, documentId: args.documentId, deadline, requestId: req.correlationId };
     const tabs = this.browser.tabs;
     switch (cmd) {
       case "tab_list": {

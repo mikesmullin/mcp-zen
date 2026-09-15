@@ -36,6 +36,8 @@ browser internals.
 | `window_new` | Extra Firefox window; session binds its tab |
 | `tap` / `swipe` | Synthetic touch/pointer + scroll. Not iOS WebDriver |
 | `console` | Page `console.*` hook (not CDP `Runtime.consoleAPICalled`). Misses messages before the hook is installed |
+| `zen_locate` / `zen_reveal` / `zen_click_at` / `zen_set_range` | Additive. Locate never clicks. Reveal is synthetic hover. click_at uses relative x/y. set_range is native `<input type=range>` only. |
+| `zen_media_state` / `_seek` / `_play` / `_pause` | Additive, CSP-independent HTMLMediaElement inspection and verified seek/play/pause. Ambiguous or unverified operations error. |
 
 Common schema fields that **cannot** be honored on an attached Firefox
 (`restore*`, `allowedDomains`, `caCert`, `clearCaCert`, `idleTimeout`,

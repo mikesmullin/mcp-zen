@@ -62,8 +62,10 @@ export class BrowserAPI {
     }
     return new Promise((resolve, reject) => {
       const correlationId = randomUUID();
-      const abort = () => finish(signal.reason || new Error("Tool cancelled"));
-      const timer = setTimeout(() => finish(new Error("Tool deadline exceeded")), Math.min(deadline - Date.now(), 2147483647));
+      const connection = this.ws;
+      const cancel = () => { if (connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({ correlationId, cancel: true })); };
+      const abort = () => { cancel(); finish(signal.reason || new Error("Tool cancelled")); };
+      const timer = setTimeout(() => { cancel(); finish(new Error("Tool deadline exceeded")); }, Math.min(deadline - Date.now(), 2147483647));
       const finish = (error, data) => {
         if (!this.pending.delete(correlationId)) return;
         clearTimeout(timer);

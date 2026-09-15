@@ -2,6 +2,7 @@
 import coreTools from "./agent-browser/core.json" with { type: "json" };
 import allTools from "./agent-browser/all.json" with { type: "json" };
 import upstream from "./agent-browser/upstream.json" with { type: "json" };
+import { zenTools } from "./zen-tools.js";
 
 const extraNames = [
   "agent_browser_frame_switch",
@@ -28,6 +29,6 @@ const extraTools = extraNames.map((name) => {
   if (!tool) throw new Error(`Pinned schema missing ${name}`);
   return tool;
 });
-const enabledTools = [...coreTools, ...extraTools];
+const enabledTools = [...coreTools, ...extraTools, ...zenTools];
 
-export { coreTools, allTools, extraTools, enabledTools, upstream };
+export { coreTools, allTools, extraTools, zenTools, enabledTools, upstream };

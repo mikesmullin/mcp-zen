@@ -116,6 +116,9 @@ ignored.
   confirms dispatch, not application success: verify playback/seek state.
 - MCP clients must forward screenshot image content, not just its filesystem
   path. An image placeholder is not visual evidence.
+- Additive `zen_*` tools (locate, reveal, click_at, set_range, media_*) are
+  Firefox capabilities, not agent-browser. Prefer `zen_media_*` on CSP-strict
+  video pages instead of `eval`. `zen_locate` never clicks; `agent_browser_find` still defaults to click.
 
 Omit `session` to use the default binding (a personal tab). Named
 `session`/`namespace` values use Firefox containers once that permission is

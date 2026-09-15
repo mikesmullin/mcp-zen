@@ -1,20 +1,23 @@
 // Runs in the extension's isolated content-script world, once per document.
 import { computeAccessibleName, getRole, isInaccessible } from "dom-accessibility-api";
 import { installConsole } from "./console-hook.js";
+import { createMediaTools } from "./media.js";
 
+const RUNTIME_VERSION = 2;
 export function installRuntime(win = window) {
-  if (win.__mcpZenRuntime) return win.__mcpZenRuntime;
+  if (win.__mcpZenRuntime?.version === RUNTIME_VERSION) return win.__mcpZenRuntime;
   const doc = win.document;
   // randomUUID is secure-context-only; automation must also work on plain HTTP.
   const documentId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const sessions = new Map();
+  const cancelled = new Set();
   const interactiveRoles = new Set(["button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "listbox", "option", "slider", "spinbutton", "switch", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "treeitem"]);
   const contentRoles = new Set(["heading", "img", "cell", "columnheader", "rowheader"]);
   const fail = (message, code = "ELEMENT_ERROR") => { throw Object.assign(new Error(message), { code }); };
   const checkDeadline = (deadline) => {
     if (Date.now() >= deadline) fail("Tool deadline exceeded", "TIMEOUT");
   };
-  const sleep = (ms, deadline) => new Promise((resolve, reject) => {
+  const delay = (ms, deadline) => new Promise((resolve, reject) => {
     if (Date.now() >= deadline) return reject(Object.assign(new Error("Tool deadline exceeded"), { code: "TIMEOUT" }));
     setTimeout(() => {
       try { checkDeadline(deadline); resolve(); } catch (error) { reject(error); }
@@ -25,7 +28,7 @@ export function installRuntime(win = window) {
   const inaccessible = (el) => isInaccessible(el, accessibilityOptions);
   const visible = (el) => Boolean(el && el.offsetWidth > 0 && el.offsetHeight > 0);
   function sessionFor(id) {
-    if (!sessions.has(id)) sessions.set(id, { refs: new Map(), byElement: new WeakMap(), nextRef: 1 });
+    if (!sessions.has(id)) sessions.set(id, { refs: new Map(), byElement: new WeakMap(), fingerprints: new Map(), nextRef: 1 });
     return sessions.get(id);
   }
   function queryFirst(selector) {
@@ -42,6 +45,8 @@ export function installRuntime(win = window) {
       if (context.documentId && context.documentId !== documentId) fail(`Stale ref ${selector}: document changed; take a new snapshot`, "STALE_REF");
       el = sessionFor(context.sessionId).refs.get(selector.replace(/^@/, ""));
       if (!el?.isConnected) fail(`Stale or unknown ref ${selector}; take a new snapshot`, "STALE_REF");
+      const expected = sessionFor(context.sessionId).fingerprints.get(selector.replace(/^@/, ""));
+      if (expected !== fingerprint(el)) fail(`Ref ${selector} now identifies changed content; take a new snapshot or locate again`, "STALE_REF");
     } else el = queryFirst(selector);
     if (!el && !allowMissing) fail(`Element not found: ${selector}`);
     return el;
@@ -76,14 +81,19 @@ export function installRuntime(win = window) {
     }
     return desc;
   }
-  function aim(el, selector) {
+  function aim(el, selector, position = {}) {
+    if (!visible(el) || inaccessible(el)) fail(`Element '${selector}' is not visible`, "ELEMENT_ERROR");
     let rect = el.getBoundingClientRect();
     if (!inView(rect)) {
       el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
       rect = el.getBoundingClientRect();
     }
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
+    const fx = position.x ?? 0.5, fy = position.y ?? 0.5;
+    if (![fx, fy].every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) fail('Relative coordinates must be between 0 and 1', 'INVALID_ARGUMENT');
+    // Endpoints aim just inside the border, never at a neighbouring element.
+    const x = rect.x + Math.min(rect.width - 0.01, Math.max(0.01, rect.width * fx));
+    const y = rect.y + Math.min(rect.height - 0.01, Math.max(0.01, rect.height * fy));
+    if (x < 0 || y < 0 || x >= win.innerWidth || y >= win.innerHeight) fail('Requested click point is outside the viewport; scroll the target into view', 'COVERED');
     const blocker = blockerAt(el, x, y);
     if (blocker) fail(`Element '${selector}' is covered by <${blocker}> at its click point, so the input would land on that element instead. Dismiss or interact with the covering element first (it is often a dialog, banner, or sticky header).`, "COVERED");
     return { x, y };
@@ -95,14 +105,19 @@ export function installRuntime(win = window) {
     target.dispatchEvent(new win.MouseEvent(type, init));
     return target;
   }
-  function clickAt(el, selector) {
-    const { x, y } = aim(el, selector);
+  function clickAt(el, selector, position) {
+    if (!enabled(el)) fail('Element is disabled', 'ELEMENT_ERROR');
+    const { x, y } = aim(el, selector, position);
     mouseAt(x, y, "mousemove");
     mouseAt(x, y, "mousedown", { buttons: 1, button: 0, detail: 1 });
     mouseAt(x, y, "mouseup", { buttons: 0, button: 0, detail: 1 });
-    // Untrusted mouse events do not activate native controls; after the overlay
-    // check, click the target itself (CDP's trusted click equivalent here).
-    el.click();
+    // Preserve coordinates in the final click too. HTMLElement.click() resets
+    // them to zero, breaking click-driven seek bars. A single dispatched click
+    // also runs native activation behaviour; do not additionally call el.click().
+    const beforeChecked = el.matches('input[type=checkbox],input[type=radio]') ? el.checked : null;
+    el.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: win, clientX: x, clientY: y, button: 0, buttons: 0, detail: 1 }));
+    if (beforeChecked !== null && el.checked === beforeChecked) el.click();
+    return { x, y, synthetic: true, dispatched: true };
   }
   function editable(el) {
     if (el.matches(":disabled") || el.readOnly || el.getAttribute("aria-disabled") === "true") fail("Element is disabled or read-only");
@@ -289,6 +304,41 @@ export function installRuntime(win = window) {
     fail(`Unknown find locator: ${locator}`);
   }
 
+  function fingerprint(el) {
+    const role = getRole(el);
+    const post = el.closest('article')?.querySelector('a[href*="/status/"]')?.getAttribute('href') || '';
+    return JSON.stringify([el.tagName, role, ['button', 'link'].includes(role) ? nameOf(el) : '', el.getAttribute('href') || '', post]);
+  }
+  function rememberElement(el, context, refs) {
+    const session = sessionFor(context.sessionId);
+    let ref = session.byElement.get(el);
+    if (!ref || session.refs.get(ref) !== el) {
+      ref = `e${session.nextRef++}`;
+      session.refs.set(ref, el);
+      session.byElement.set(el, ref);
+    }
+    session.fingerprints.set(ref, fingerprint(el));
+    refs[ref] = { role: getRole(el) || el.localName, name: nameOf(el).slice(0, 500) };
+    return ref;
+  }
+  function queryAll(selector, root = doc) {
+    try { return [...root.querySelectorAll(selector)]; }
+    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS; text filters are available through zen_locate.`, 'INVALID_SELECTOR'); }
+  }
+  function selectUnique(selector, context) {
+    if (/^@?e\d+$/.test(selector) || selector.startsWith('xpath=')) return resolve(selector, context);
+    const matches = queryAll(selector);
+    if (matches.length !== 1) fail(`Expected one target for ${selector}, found ${matches.length}. Use zen_locate to disambiguate.`, matches.length ? 'AMBIGUOUS_TARGET' : 'ELEMENT_ERROR');
+    return matches[0];
+  }
+  function describeElement(el, context, refs) {
+    const ref = rememberElement(el, context, refs);
+    const attributes = {};
+    for (const key of ['data-testid', 'aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext', 'type']) {
+      if (el.hasAttribute(key)) attributes[key] = el.getAttribute(key).slice(0, 200);
+    }
+    return { ref, ...refs[ref], text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 400), attributes, visible: visible(el) && !inaccessible(el) };
+  }
   function snapshot(args, context) {
     const scope = args.selector ? resolve(args.selector, context) : doc.body;
     if (!scope) fail("Page has no body");
@@ -297,19 +347,19 @@ export function installRuntime(win = window) {
     const registry = session.refs;
     // Reuse refs only for the very same live DOM node. Never guess which React
     // replacement an old ref meant: that could click a different post/action.
-    for (const [ref, el] of registry) if (!el.isConnected) registry.delete(ref);
-    while (registry.size > 10000) registry.delete(registry.keys().next().value);
-    let nextRef = Math.max(session.nextRef, args.nextRef || 1);
+    for (const [ref, el] of registry) if (!el.isConnected) { registry.delete(ref); session.fingerprints.delete(ref); }
+    while (registry.size > 10000) { const ref = registry.keys().next().value; registry.delete(ref); session.fingerprints.delete(ref); }
+    session.nextRef = Math.max(session.nextRef, args.nextRef || 1);
     const lines = [];
     const annotations = [];
     function walk(el, depth) {
       if (args.depth !== undefined && depth > args.depth) return;
       if (["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"].includes(el.tagName) || inaccessible(el)) return;
       let role = getRole(el);
-      if (!role && el.isContentEditable) role = "textbox";
+      if (!role && el.isContentEditable && !el.parentElement?.isContentEditable) role = "textbox";
       if (!role && ["IFRAME", "FRAME"].includes(el.tagName)) role = "iframe";
       const name = role ? nameOf(el) : "";
-      const interactive = interactiveRoles.has(role) || el.tabIndex >= 0 || el.isContentEditable || role === "iframe";
+      const interactive = interactiveRoles.has(role) || el.tabIndex >= 0 || (el.isContentEditable && !el.parentElement?.isContentEditable) || role === "iframe";
       const hasRef = interactive || (contentRoles.has(role) && name);
       if (args.interactive !== false && !hasRef) {
         for (const child of el.children) walk(child, depth);
@@ -321,15 +371,13 @@ export function installRuntime(win = window) {
         let line = `- ${role || "generic"}`;
         if (name) line += ` ${JSON.stringify(name)}`;
         if (hasRef) {
-          let ref = session.byElement.get(el);
-          if (!ref || registry.get(ref) !== el) {
-            ref = `e${nextRef++}`;
-            registry.set(ref, el);
-            session.byElement.set(el, ref);
-          }
+          const ref = rememberElement(el, context, refs);
           refs[ref] = { role: role || "generic", name };
           line += ` [ref=${ref}]`;
           annotations.push({ ref, el });
+        }
+        if (role === 'slider') for (const attr of ['aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) {
+          if (el.hasAttribute(attr)) line += ` [${attr}=${JSON.stringify(el.getAttribute(attr))}]`;
         }
         if (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") line += " [disabled]";
         if (el.checked || el.getAttribute("aria-checked") === "true") line += " [checked]";
@@ -349,13 +397,76 @@ export function installRuntime(win = window) {
       if (el.shadowRoot) for (const child of el.shadowRoot.children) walk(child, depth + 1);
     }
     walk(scope, 0);
-    session.nextRef = nextRef;
-    return { data: { snapshot: lines.join("\n") || "(empty)", refs, documentId, nextRef }, annotations };
+    const rootMatchCount = args.selector && !/^@?e\d+$/.test(args.selector) && !args.selector.startsWith('xpath=') ? queryAll(args.selector).length : 1;
+    const note = rootMatchCount > 1 ? `Note: selector matched ${rootMatchCount} roots; snapshot shows only the first subtree. Use zen_locate for all candidates.\n` : '';
+    return { data: { snapshot: note + (lines.join("\n") || "(empty)"), refs, documentId, nextRef: session.nextRef, rootMatchCount }, annotations };
   }
 
   async function run(cmd, args = {}, context = {}) {
     const deadline = context.deadline || Date.now() + 120000;
-    checkDeadline(deadline);
+    const checkWork = (until = deadline) => {
+      checkDeadline(until);
+      if (cancelled.has(context.requestId)) fail('Tool cancelled; inspect state before retrying', 'CANCELLED');
+    };
+    const sleep = async (ms, until) => {
+      const end = Date.now() + ms;
+      do { checkWork(until); await delay(Math.min(50, Math.max(0, end - Date.now())), until); } while (Date.now() < end);
+      checkWork(until);
+    };
+    checkWork();
+    context = { ...context, deadline };
+    const session = sessionFor(context.sessionId);
+    session.nextRef = Math.max(session.nextRef, args.nextRef || 1);
+    while (session.refs.size > 10000) { const ref = session.refs.keys().next().value; session.refs.delete(ref); session.fingerprints.delete(ref); }
+    if (cmd.startsWith('media_') || ['locate', 'reveal', 'click_at', 'set_range'].includes(cmd)) {
+      const refs = {};
+      let data;
+      if (cmd.startsWith('media_')) {
+        const mediaTool = createMediaTools(win, { selectUnique, refFor: (el) => rememberElement(el, context, refs), fail, checkDeadline: checkWork, sleep });
+        data = await mediaTool(cmd, args, context);
+      } else if (cmd === 'locate') {
+        const root = args.scope ? selectUnique(args.scope, context) : doc;
+        const selector = args.selector || '*';
+        let matches = /^@?e\d+$/.test(selector) ? [resolve(selector, context)] : queryAll(selector, root);
+        if (args.scope) matches = matches.filter((el) => root.contains(el));
+        const match = (actual, wanted) => wanted === undefined || (args.exact ? actual === wanted : actual.toLowerCase().includes(wanted.toLowerCase()));
+        matches = matches.filter((el) => !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(el.tagName) &&
+          (args.includeHidden || (visible(el) && !inaccessible(el))) &&
+          (!args.role || getRole(el) === args.role) && match(nameOf(el), args.name) &&
+          match((el.textContent || '').replace(/\s+/g, ' ').trim(), args.text));
+        if (args.text && selector === '*') matches = matches.filter((el) => !matches.some((other) => other !== el && el.contains(other)));
+        const shown = matches.slice(0, args.limit ?? 10);
+        data = { candidates: shown.map((el) => describeElement(el, context, refs)), count: matches.length, truncated: shown.length < matches.length };
+      } else {
+        const el = selectUnique(args.selector, context);
+        if (cmd === 'click_at') data = clickAt(el, args.selector, args);
+        if (cmd === 'set_range') {
+          if (!el.matches('input[type=range]')) fail('Only native input[type=range] is supported; use click_at or verified media_seek for custom sliders', 'UNSUPPORTED_CAPABILITY');
+          if (!enabled(el)) fail('Range is disabled', 'ELEMENT_ERROR');
+          const min = el.min === '' ? 0 : Number(el.min), max = el.max === '' ? 100 : Number(el.max);
+          if (!Number.isFinite(args.value) || args.value < min || args.value > max) fail('Value is outside range bounds', 'INVALID_ARGUMENT');
+          Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(el, String(args.value));
+          el.dispatchEvent(new win.Event('input', { bubbles: true }));
+          el.dispatchEvent(new win.Event('change', { bubbles: true }));
+          data = { requestedValue: args.value, observedValue: Number(el.value), dispatched: true };
+        }
+        if (cmd === 'reveal') {
+          el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+          hover(el, args.selector);
+          const until = Math.min(deadline, Date.now() + (args.waitTimeoutMs ?? 5000));
+          let controls;
+          while (true) {
+            if (!el.isConnected) fail('Reveal target detached; locate again', 'STALE_REF');
+            controls = queryAll(args.controls, el).filter((node) => visible(node) && !inaccessible(node) && win.getComputedStyle(node).opacity !== '0');
+            if (controls.length) break;
+            if (Date.now() >= until) fail('Controls did not become visible after synthetic hover; CSS-only hover may require a real pointer', 'REVEAL_FAILED');
+            await sleep(50, deadline);
+          }
+          data = { revealed: true, count: controls.length, controls: controls.slice(0, 20).map((node) => describeElement(node, context, refs)), truncated: controls.length > 20 };
+        }
+      }
+      return { ...data, refs, documentId, nextRef: session.nextRef, observedAt: new Date().toISOString() };
+    }
     if (cmd === "snapshot") return snapshot(args, context).data;
     if (cmd === "get_url") return { url: win.location.href };
     if (cmd === "get_title") return { title: doc.title };
@@ -380,7 +491,7 @@ export function installRuntime(win = window) {
       const waitDeadline = Math.min(deadline, Date.now() + (args.waitTimeoutMs ?? 25000));
       if (cmd === "wait_for_load" && args.state === "networkidle") fail("networkidle requires network instrumentation and is not supported by this backend", "UNSUPPORTED_CAPABILITY");
       for (;;) {
-        checkDeadline(waitDeadline);
+        checkWork(waitDeadline);
         let found = false;
         if (cmd === "wait_for_selector") {
           const el = resolve(args.selector, context, true);
@@ -578,10 +689,7 @@ export function installRuntime(win = window) {
     }
     if (cmd === "hover") { hover(el, args.selector); return { hovered: args.selector }; }
     if (cmd === "tap") {
-      const { x, y } = aim(el, args.selector);
-      mouseAt(x, y, "mousedown", { pointerType: "touch", buttons: 1, detail: 1 });
-      mouseAt(x, y, "mouseup", { pointerType: "touch", detail: 1 });
-      el.click();
+      clickAt(el, args.selector);
       return { tapped: args.selector };
     }
     if (!visible(el)) fail("Element is not visible");
@@ -646,7 +754,12 @@ export function installRuntime(win = window) {
     fail(`Unsupported page operation: ${cmd}`, "UNSUPPORTED_CAPABILITY");
   }
 
-  win.__mcpZenRuntime = { run, documentId };
+  win.__mcpZenRuntime = {
+    run: async (cmd, args, context = {}) => { try { return await run(cmd, args, context); } finally { cancelled.delete(context.requestId); } },
+    cancel: (id) => { cancelled.add(id); setTimeout(() => cancelled.delete(id), 120000); },
+    documentId,
+    version: RUNTIME_VERSION,
+  };
   return win.__mcpZenRuntime;
 }
 

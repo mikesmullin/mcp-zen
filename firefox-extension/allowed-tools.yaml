@@ -1,6 +1,14 @@
 # Internal browser operations; public MCP tools are pinned in common/agent-browser/*.json.
 # Edit this list and rebuild to restrict what the extension may execute.
 enabled:
+  - locate
+  - reveal
+  - click_at
+  - set_range
+  - media_state
+  - media_seek
+  - media_play
+  - media_pause
   - tab_list
   - tab_new
   - tab_switch

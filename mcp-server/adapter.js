@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { coreTools, extraTools, enabledTools, upstream } from "@mcp-zen/common";
+import { coreTools, extraTools, zenTools, enabledTools, upstream } from "@mcp-zen/common";
 import { normalizeUrl, readContent, urlsMatch } from "./read.js";
 
 export class CapabilityError extends Error {
@@ -48,7 +48,7 @@ export class AgentBrowserAdapter {
   }
 
   async call(name, args, { signal: externalSignal } = {}) {
-    const cmd = name.replace(/^agent_browser_/, "");
+    const cmd = name.replace(/^(agent_browser_|zen_)/, "");
     const controller = new AbortController();
     const timeout = Math.min(args.timeoutMs ?? 120000, 2147483647);
     const deadline = Date.now() + timeout;
@@ -62,8 +62,9 @@ export class AgentBrowserAdapter {
       if (cmd === "open") for (const key of ["headed", "webgpu", "webmcp"]) if (args[key] !== undefined) throw new CapabilityError(`${key} is a browser-launch option and cannot be changed on your running Zen browser`);
       if (cmd === "wait_for_load" && args.state === "networkidle") throw new CapabilityError("networkidle is not supported without network instrumentation; use load or domcontentloaded");
       if (cmd === "tools_profiles") return toolResult({
-        activeProfiles: ["core", "checkout"],
+        activeProfiles: ["core", "checkout", "zen"],
         profiles: [
+          { name: "zen", enabled: true, tools: zenTools.map((tool) => tool.name), description: "CSP-independent verified media controls, read-only locating, reveal and relative input." },
           { name: "core", enabled: true, tools: coreTools.map((tool) => tool.name), description: "Agent-browser core API on attached Firefox. DOM-derived snapshots and synthetic input; see docs/parity.md." },
           { name: "checkout", enabled: true, tools: extraTools.map((tool) => tool.name), description: "Frames, find/hover, dialogs, URL waits, element queries, new windows, tap/swipe, console." },
         ],
@@ -175,18 +176,19 @@ export class AgentBrowserAdapter {
     tabId ??= await this.current(session, context);
     let documentId;
     let frameId = session.frameId ?? 0;
-    const target = args.selector || args.frame;
-    // Snapshot text uses [ref=eN]; accept that spelling as well as @eN, but
-    // always apply the same session/tab/document checks (never treat it as CSS).
-    if (typeof target === "string" && /^@?e\d+$/.test(target)) {
+    // Every ref-bearing field shares session/tab/document/frame validation.
+    for (const target of [args.selector, args.frame, args.scope]) {
+      if (typeof target !== "string" || !/^@?e\d+$/.test(target)) continue;
       const ref = session.refs.get(target.replace(/^@/, ""));
-      if (!ref || ref.tabId !== tabId) throw Object.assign(new Error(`Stale or unknown ref ${target}; take a snapshot in this session/tab`), { code: "STALE_REF" });
+      if (!ref || ref.tabId !== tabId || (documentId && (documentId !== ref.documentId || frameId !== ref.frameId))) {
+        throw Object.assign(new Error(`Stale, unknown or cross-frame ref ${target}; take a snapshot in this session/tab`), { code: "STALE_REF" });
+      }
       documentId = ref.documentId;
       frameId = ref.frameId ?? frameId;
     }
     const data = await this.request(cmd, { ...args, tabId, frameId, sessionId: session.id, documentId, nextRef: session.nextRef }, context);
     this.remember(session, tabId, data);
-    return data;
+    return { ...data, tabId, frameId: data.frameId ?? frameId };
   }
 
   async closeSession(session, context) {
@@ -284,7 +286,7 @@ export class AgentBrowserAdapter {
     }
     const data = await this.page(cmd, args, session, context, tabId);
     if (cmd === "click" && data.newTabUrl) return toolResult(await this.newTab({ url: data.newTabUrl }, session, context));
-    const { documentId, nextRef, ...publicData } = data;
+    const { documentId, nextRef, tabId: _tabId, ...publicData } = data;
     return toolResult(publicData);
   }
 }
