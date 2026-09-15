@@ -176,8 +176,10 @@ export class AgentBrowserAdapter {
     let documentId;
     let frameId = session.frameId ?? 0;
     const target = args.selector || args.frame;
-    if (target?.startsWith("@")) {
-      const ref = session.refs.get(target.slice(1));
+    // Snapshot text uses [ref=eN]; accept that spelling as well as @eN, but
+    // always apply the same session/tab/document checks (never treat it as CSS).
+    if (typeof target === "string" && /^@?e\d+$/.test(target)) {
+      const ref = session.refs.get(target.replace(/^@/, ""));
       if (!ref || ref.tabId !== tabId) throw Object.assign(new Error(`Stale or unknown ref ${target}; take a snapshot in this session/tab`), { code: "STALE_REF" });
       documentId = ref.documentId;
       frameId = ref.frameId ?? frameId;

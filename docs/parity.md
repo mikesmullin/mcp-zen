@@ -19,7 +19,7 @@ browser internals.
 | `open` | Navigates the session's bound tab (`about:blank` if URL omitted). Launch flags (`headed`, `webgpu`, `webmcp`) error |
 | `read` | Live tab HTML (Readability). `url` navigates that tab if different, then waits for load. `llms` still HTTP-fetches ancestor llms.txt |
 | `snapshot` | DOM accessibility approximation with `@eN` refs (not Chromium `Accessibility.getFullAXTree`) |
-| `click` / `fill` / `type` / `press` / `check` / `uncheck` / `select` / `scroll` | Synthetic DOM events; `@ref` or unique CSS |
+| `click` / `fill` / `type` / `press` / `check` / `uncheck` / `select` / `scroll` | Synthetic DOM events; `@ref` / bare `eN` or first CSS match |
 | `wait_ms` | Server-side timer |
 | `wait_for_selector` / `wait_for_text` / `wait_for_load` | In-page polling. `networkidle` errors |
 | `screenshot` | `tabs.captureTab` (background tabs, optional rect). Overlay numbers for `annotate`. Files are written on the **MCP server host** |
@@ -109,7 +109,9 @@ Page-provided tools. Doable in-page, not implemented.
 - Screenshots: element/full-page use `captureTab` rects; very large pages
   are rejected. JPEG/annotate/path are implemented.
 - Refs are per mcp-zen session + tab + document, not Chromium backend node
-  ids. Navigation invalidates them.
+  ids. The same connected node keeps its ref across snapshots. Bare `eN` and
+  `@eN` share the same validation; DOM replacements never inherit old refs.
+  Navigation invalidates them, and retained registries are bounded.
 - `read` uses the tab DOM (not a cookie-less Node fetch). `llms.txt` discovery still fetches from Node.
 - Concurrent MCP clients share one extension socket; isolation is logical
   (session queues + containers), not process isolation.

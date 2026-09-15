@@ -64,7 +64,9 @@ test("live Firefox: temporary extension + real MCP core workflow in a disposable
   assert.equal(created.url, url, "tab_new must await navigation, not report the initial about:blank");
   const snapshot = await call("snapshot");
   const inputRef = Object.entries(snapshot.refs).find(([, ref]) => ref.name === "Full name")[0];
-  await call("fill", { selector: `@${inputRef}`, text: "Ada" });
+  const scoped = await call("snapshot", { selector: "#name" });
+  assert.deepEqual(Object.keys(scoped.refs), [inputRef], "Firefox Xray wrappers preserve node identity across calls");
+  await call("fill", { selector: inputRef, text: "Ada" });
   await call("type", { selector: "#name", text: " Lovelace", delayMs: 1 });
   assert.equal((await call("eval", { script: "document.getElementById('name').value" })).result, "Ada Lovelace");
   await call("check", { selector: "#check" }); await call("uncheck", { selector: "#check" });

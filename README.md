@@ -77,7 +77,7 @@ ignored.
 | `agent_browser_open` | Navigate bound tab; no browser launch flags |
 | `agent_browser_read` | Live tab HTML; `url` navigates first if needed. `llms` fetches llms.txt |
 | `agent_browser_snapshot` | A11y-style tree + `@eN` refs |
-| `agent_browser_click` | `@ref` or unique CSS; `newTab` opens the link |
+| `agent_browser_click` | `@ref`, bare `eN`, or first CSS match; `newTab` opens the link |
 | `agent_browser_fill` / `type` | `text` (not `value`); synthetic input |
 | `agent_browser_press` | Chords like `Control+a`; untrusted events |
 | `agent_browser_check` / `uncheck` / `select` | `select` takes `values: string[]` |
@@ -100,6 +100,22 @@ ignored.
 | `agent_browser_window_new` | |
 | `agent_browser_tap` / `swipe` | Synthetic touch |
 | `agent_browser_console` | `{ clear?: boolean }` — page console buffer |
+
+### Reliable targeting
+
+- Use `@eN` from snapshots; bare `eN` is also accepted. Repeated snapshots
+  retain refs for the same connected DOM node. Removed/replaced nodes, navigation,
+  or evicted refs require a fresh snapshot; refs never automatically retarget.
+- Selectors use standard CSS (first match), `xpath=...`, or snapshot refs—not
+  Playwright `:has-text()` / `:text()`. Scope to the intended post/player rather
+  than using a page-wide `[role=slider]` (which can also match volume).
+- `agent_browser_find` **defaults to click**. Use `action: "text"` to read
+  without activating the match. Snapshot queries do not click.
+- `eval` may be blocked by a site's CSP. Ordinary DOM tools still work.
+- Hover is synthetic and may not reveal CSS-only controls. A click response
+  confirms dispatch, not application success: verify playback/seek state.
+- MCP clients must forward screenshot image content, not just its filesystem
+  path. An image placeholder is not visual evidence.
 
 Omit `session` to use the default binding (a personal tab). Named
 `session`/`namespace` values use Firefox containers once that permission is

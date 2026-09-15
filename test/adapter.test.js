@@ -46,14 +46,19 @@ test("refs are monotonic and bound to a session, tab, and document", async () =>
   assert.ok(first.refs.e1);
   data(await call("click", { selector: "@e1" }));
   assert.equal(api.calls.at(-1).args.documentId, "document-1");
+  data(await call("click", { selector: "e1" }));
+  assert.equal(api.calls.at(-1).args.documentId, "document-1");
+  assert.equal((await call("click", { selector: "e1", session: "other" })).structuredContent.response.data.code, "STALE_REF");
   assert.ok(data(await call("snapshot")).refs.e2);
   api.documentId = "document-2";
   assert.equal((await call("click", { selector: "@e1" })).structuredContent.response.data.code, "STALE_REF");
+  assert.equal((await call("click", { selector: "e1" })).structuredContent.response.data.code, "STALE_REF");
   data(await call("open", { url: "example.org" }));
   assert.equal((await call("click", { selector: "@e2" })).structuredContent.response.data.code, "STALE_REF");
   assert.ok(data(await call("snapshot")).refs.e3);
   data(await call("tab_new"));
   assert.equal((await call("click", { selector: "@e3" })).isError, true);
+  assert.equal((await call("click", { selector: "e3" })).isError, true);
 });
 
 test("unsupported launch/security/restore settings fail before browser side effects", async () => {

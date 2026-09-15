@@ -25,7 +25,7 @@ export function installRuntime(win = window) {
   const inaccessible = (el) => isInaccessible(el, accessibilityOptions);
   const visible = (el) => Boolean(el && el.offsetWidth > 0 && el.offsetHeight > 0);
   function sessionFor(id) {
-    if (!sessions.has(id)) sessions.set(id, new Map());
+    if (!sessions.has(id)) sessions.set(id, { refs: new Map(), byElement: new WeakMap(), nextRef: 1 });
     return sessions.get(id);
   }
   function queryFirst(selector) {
@@ -33,14 +33,14 @@ export function installRuntime(win = window) {
       return doc.evaluate(selector.slice(6), doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
     }
     try { return doc.querySelector(selector); }
-    catch { fail(`Invalid CSS selector: ${selector}`, "INVALID_SELECTOR"); }
+    catch { fail(`Invalid CSS selector: ${selector}. Use standard CSS, xpath=..., or @eN snapshot refs; Playwright :has-text()/:text() selectors are not supported. agent_browser_find with action="text" reads without clicking (its default action is click).`, "INVALID_SELECTOR"); }
   }
   function resolve(selector, context, allowMissing = false) {
     if (typeof selector !== "string" || !selector.trim()) fail("A nonempty selector is required", "INVALID_SELECTOR");
     let el;
-    if (selector.startsWith("@")) {
+    if (/^@?e\d+$/.test(selector)) {
       if (context.documentId && context.documentId !== documentId) fail(`Stale ref ${selector}: document changed; take a new snapshot`, "STALE_REF");
-      el = sessionFor(context.sessionId).get(selector.slice(1));
+      el = sessionFor(context.sessionId).refs.get(selector.replace(/^@/, ""));
       if (!el?.isConnected) fail(`Stale or unknown ref ${selector}; take a new snapshot`, "STALE_REF");
     } else el = queryFirst(selector);
     if (!el && !allowMissing) fail(`Element not found: ${selector}`);
@@ -293,10 +293,13 @@ export function installRuntime(win = window) {
     const scope = args.selector ? resolve(args.selector, context) : doc.body;
     if (!scope) fail("Page has no body");
     const refs = {};
-    const registry = sessionFor(context.sessionId);
-    // Bound retained references per session/document. Old refs fail explicitly.
-    if (registry.size > 10000) registry.clear();
-    let nextRef = args.nextRef || 1;
+    const session = sessionFor(context.sessionId);
+    const registry = session.refs;
+    // Reuse refs only for the very same live DOM node. Never guess which React
+    // replacement an old ref meant: that could click a different post/action.
+    for (const [ref, el] of registry) if (!el.isConnected) registry.delete(ref);
+    while (registry.size > 10000) registry.delete(registry.keys().next().value);
+    let nextRef = Math.max(session.nextRef, args.nextRef || 1);
     const lines = [];
     const annotations = [];
     function walk(el, depth) {
@@ -318,8 +321,12 @@ export function installRuntime(win = window) {
         let line = `- ${role || "generic"}`;
         if (name) line += ` ${JSON.stringify(name)}`;
         if (hasRef) {
-          const ref = `e${nextRef++}`;
-          registry.set(ref, el);
+          let ref = session.byElement.get(el);
+          if (!ref || registry.get(ref) !== el) {
+            ref = `e${nextRef++}`;
+            registry.set(ref, el);
+            session.byElement.set(el, ref);
+          }
           refs[ref] = { role: role || "generic", name };
           line += ` [ref=${ref}]`;
           annotations.push({ ref, el });
@@ -342,6 +349,7 @@ export function installRuntime(win = window) {
       if (el.shadowRoot) for (const child of el.shadowRoot.children) walk(child, depth + 1);
     }
     walk(scope, 0);
+    session.nextRef = nextRef;
     return { data: { snapshot: lines.join("\n") || "(empty)", refs, documentId, nextRef }, annotations };
   }
 
