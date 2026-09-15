@@ -59,10 +59,10 @@ export class BrowserAPI {
     if (Date.now() >= deadline) return Promise.reject(new Error("Tool deadline exceeded"));
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(Object.assign(new Error(
-        "EXTENSION_NOT_CONNECTED: the mcp-zen Firefox add-on is not connected. " +
-        "Tell Mike to load it as a temporary extension: Zen → about:debugging → This Firefox → " +
-        "Load Temporary Add-on → /workspace/mcp/zen/firefox-extension/manifest.json. " +
-        "Temporary add-ons unload on browser restart; this is not a blank page and not a permission issue."
+        "EXTENSION_NOT_CONNECTED: the mcp-zen Firefox/Zen add-on is not connected. " +
+        "Load it as a temporary extension: about:debugging → This Firefox → Load Temporary Add-on → " +
+        "firefox-extension/manifest.json in the mcp-zen checkout. Temporary add-ons unload on browser restart. " +
+        "This is not a missing-permission error and not an empty page."
       ), { code: "EXTENSION_NOT_CONNECTED" }));
     }
     return new Promise((resolve, reject) => {
