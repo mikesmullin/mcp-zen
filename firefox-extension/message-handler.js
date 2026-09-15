@@ -16,7 +16,12 @@ export class MessageHandler {
 
   async permission() {
     if (!await this.browser.permissions.contains({ origins: ["<all_urls>"] })) {
-      throw new Error("Browser automation permission is missing. Open extension options and enable browser automation.");
+      throw Object.assign(new Error(
+        "AUTOMATION_PERMISSION_MISSING: mcp-zen is loaded but browser automation is off. " +
+        "Tell Mike to open the mcp-zen extension options and click Enable browser automation " +
+        "(grants <all_urls>). Tab URL/title/list can still work; snapshot, click, zen_media_*, and other page tools cannot. " +
+        "This is not the same as the add-on being missing."
+      ), { code: "AUTOMATION_PERMISSION_MISSING" });
     }
   }
 
