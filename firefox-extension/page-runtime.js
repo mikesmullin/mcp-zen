@@ -3,7 +3,7 @@ import { computeAccessibleName, getRole, isInaccessible } from "dom-accessibilit
 import { installConsole } from "./console-hook.js";
 import { createMediaTools } from "./media.js";
 
-const RUNTIME_VERSION = 2;
+const RUNTIME_VERSION = 14;
 export function installRuntime(win = window) {
   if (win.__mcpZenRuntime?.version === RUNTIME_VERSION) return win.__mcpZenRuntime;
   const doc = win.document;
@@ -27,6 +27,58 @@ export function installRuntime(win = window) {
   const accessibilityOptions = { getComputedStyle: win.getComputedStyle.bind(win) };
   const inaccessible = (el) => isInaccessible(el, accessibilityOptions);
   const visible = (el) => Boolean(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+  let lastTrustedMove = null;
+  doc.addEventListener("mousemove", (e) => {
+    if (!e.isTrusted) return;
+    lastTrustedMove = { clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY, ts: Date.now() };
+  }, true);
+  function painted(el) {
+    if (!el?.isConnected) return false;
+    const styleOf = (n) => win.getComputedStyle(n);
+    const self = styleOf(el);
+    if (self.visibility === "hidden" || self.display === "none" || self.pointerEvents === "none") return false;
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const s = styleOf(n);
+      if (s.visibility === "hidden" || s.display === "none") return false;
+      if (Number(s.opacity) < 0.1) return false;
+    }
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    const hit = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return isOnTarget(el, hit);
+  }
+  function isOnTarget(el, hit) {
+    if (!el || !hit) return false;
+    if (hit === el) return true;
+    try { if (el.contains(hit)) return true; } catch {}
+    for (let n = hit, i = 0; n && i < 25; i++) {
+      if (n === el) return true;
+      const aria = n.getAttribute?.('aria-label');
+      if (aria && aria === el.getAttribute?.('aria-label')) return true;
+      n = n.parentElement || n.parentNode || n.host || n.getRootNode?.()?.host;
+    }
+    // Firefox Xray often makes button.contains(svg) false; an opaque SVG at the
+    // control's box is the in-player icon, not the <video>.
+    const tag = String(hit.localName || hit.tagName || '').toLowerCase();
+    if ((tag === 'svg' || tag === 'path' || tag === 'use' || tag.endsWith('svg')) && /full\s*screen/i.test(el.getAttribute('aria-label') || '')) return true;
+    return false;
+  }
+  function layoutBox(el) {
+    const box = el.getBoundingClientRect();
+    const vv = win.visualViewport;
+    const dpr = win.devicePixelRatio || 1;
+    const ox = vv?.offsetLeft || 0, oy = vv?.offsetTop || 0, scale = vv?.scale || 1;
+    const visual = { x: (box.left - ox) * scale, y: (box.top - oy) * scale, w: box.width * scale, h: box.height * scale };
+    const innerX = win.mozInnerScreenX ?? win.screenX ?? 0;
+    const innerY = win.mozInnerScreenY ?? win.screenY ?? 0;
+    return {
+      viewport: { x: box.left, y: box.top, w: box.width, h: box.height },
+      visual,
+      screenDevice: { x: (innerX + visual.x) * dpr, y: (innerY + visual.y) * dpr },
+      dpr, visualViewport: { scale, offsetLeft: ox, offsetTop: oy },
+      mozInnerScreenX: innerX, mozInnerScreenY: innerY,
+    };
+  }
   function sessionFor(id) {
     if (!sessions.has(id)) sessions.set(id, { refs: new Map(), byElement: new WeakMap(), fingerprints: new Map(), nextRef: 1 });
     return sessions.get(id);
@@ -337,7 +389,24 @@ export function installRuntime(win = window) {
     for (const key of ['data-testid', 'aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext', 'type']) {
       if (el.hasAttribute(key)) attributes[key] = el.getAttribute(key).slice(0, 200);
     }
-    return { ref, ...refs[ref], text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 400), attributes, visible: visible(el) && !inaccessible(el) };
+    const layout = layoutBox(el);
+    const r = el.getBoundingClientRect();
+    const hitEl = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const opacities = [];
+    for (let n = el; n && n.nodeType === 1 && opacities.length < 6; n = n.parentElement) {
+      const s = win.getComputedStyle(n);
+      opacities.push(`${n.tagName.toLowerCase()} op=${s.opacity} vis=${s.visibility} pe=${s.pointerEvents}`);
+    }
+    return {
+      ref, ...refs[ref],
+      text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      attributes,
+      visible: visible(el) && !inaccessible(el),
+      painted: painted(el),
+      hit: hitEl ? hitEl.tagName.toLowerCase() : null,
+      opacities,
+      box: layout,
+    };
   }
   function snapshot(args, context) {
     const scope = args.selector ? resolve(args.selector, context) : doc.body;
@@ -418,11 +487,33 @@ export function installRuntime(win = window) {
     const session = sessionFor(context.sessionId);
     session.nextRef = Math.max(session.nextRef, args.nextRef || 1);
     while (session.refs.size > 10000) { const ref = session.refs.keys().next().value; session.refs.delete(ref); session.fingerprints.delete(ref); }
+    if (cmd === 'pointer_last') return { move: lastTrustedMove && Date.now() - lastTrustedMove.ts < 2000 ? lastTrustedMove : null };
+    if (cmd === 'pointer_aim') {
+      const el = selectUnique(args.selector, context);
+      const layout = layoutBox(el);
+      const r = el.getBoundingClientRect();
+      const hit = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const opacities = [];
+      for (let n = el; n && n.nodeType === 1 && opacities.length < 8; n = n.parentElement) {
+        const s = win.getComputedStyle(n);
+        opacities.push({ tag: n.tagName.toLowerCase(), opacity: s.opacity, vis: s.visibility, pe: s.pointerEvents, display: s.display });
+      }
+      return { painted: painted(el), box: layout, tag: el.tagName.toLowerCase(), name: nameOf(el).slice(0, 200), hit: hit ? `${hit.tagName.toLowerCase()}${hit.id ? '#' + hit.id : ''}` : null, opacities };
+    }
+    if (cmd === 'pointer_hit') {
+      const el = selectUnique(args.selector, context);
+      const x = args.clientX ?? lastTrustedMove?.clientX;
+      const y = args.clientY ?? lastTrustedMove?.clientY;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: 'no-pointer' };
+      const hit = doc.elementFromPoint(x, y);
+      const ok = isOnTarget(el, hit);
+      return { ok, painted: painted(el), hit: hit ? `${hit.tagName.toLowerCase()}${hit.id ? '#' + hit.id : ''}` : null, clientX: x, clientY: y };
+    }
     if (cmd.startsWith('media_') || ['locate', 'reveal', 'click_at', 'set_range'].includes(cmd)) {
       const refs = {};
       let data;
       if (cmd.startsWith('media_')) {
-        const mediaTool = createMediaTools(win, { selectUnique, refFor: (el) => rememberElement(el, context, refs), fail, checkDeadline: checkWork, sleep, hover, clickAt });
+        const mediaTool = createMediaTools(win, { selectUnique, refFor: (el) => rememberElement(el, context, refs), fail, checkDeadline: checkWork, sleep, hover, clickAt, painted });
         data = await mediaTool(cmd, args, context);
       } else if (cmd === 'locate') {
         const root = args.scope ? selectUnique(args.scope, context) : doc;
@@ -431,7 +522,7 @@ export function installRuntime(win = window) {
         if (args.scope) matches = matches.filter((el) => root.contains(el));
         const match = (actual, wanted) => wanted === undefined || (args.exact ? actual === wanted : actual.toLowerCase().includes(wanted.toLowerCase()));
         matches = matches.filter((el) => !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(el.tagName) &&
-          (args.includeHidden || (visible(el) && !inaccessible(el))) &&
+          (args.includeHidden || (painted(el) && !inaccessible(el))) &&
           (!args.role || getRole(el) === args.role) && match(nameOf(el), args.name) &&
           match((el.textContent || '').replace(/\s+/g, ' ').trim(), args.text));
         if (args.text && selector === '*') matches = matches.filter((el) => !matches.some((other) => other !== el && el.contains(other)));

@@ -1,5 +1,5 @@
 // HTMLMediaElement operations in the isolated content world, independent of CSP eval.
-export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadline, sleep, hover, clickAt }) {
+export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadline, sleep, hover, clickAt, painted }) {
   const finite = (n) => Number.isFinite(n) ? n : null;
   function ranges(media) {
     return Array.from({ length: Math.min(media.seekable.length, 20) }, (_, i) => ({ start: media.seekable.start(i), end: media.seekable.end(i) }));
@@ -23,13 +23,19 @@ export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadlin
     if (!doc) return Boolean(media.webkitDisplayingFullscreen);
     const el = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement;
     if (el && (el === media || el.contains?.(media) || media.contains?.(el))) return true;
-    return Boolean(media.webkitDisplayingFullscreen);
+    if (media.webkitDisplayingFullscreen) return true;
+    const btn = fullscreenControl(playerRoot(media));
+    return /exit\s*full\s*screen/i.test(btn?.getAttribute?.("aria-label") || "");
   }
   function playerRoot(media) {
     return media.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"], figure') || media.parentElement || media;
   }
-  function fullscreenControl(root) {
-    return [...(root.querySelectorAll?.('button, [role=button]') || [])].find((b) => /full\s*screen/i.test(`${b.getAttribute('aria-label') || ''} ${b.textContent || ''}`));
+  function fullscreenButtons(root) {
+    return [...(root.querySelectorAll?.('button, [role=button]') || [])].filter((b) => /full\s*screen/i.test(`${b.getAttribute('aria-label') || ''} ${b.textContent || ''}`));
+  }
+  function fullscreenControl(root, paintedFn) {
+    const all = fullscreenButtons(root);
+    return all.find((b) => !paintedFn || paintedFn(b)) || all[0] || null;
   }
   function candidates(selector, context) {
     const root = selector ? selectUnique(selector, context) : win.document;
@@ -102,32 +108,29 @@ export function createMediaTools(win, { selectUnique, refFor, fail, checkDeadlin
       const doc = win.document;
       const currently = isFullscreen(media, doc);
       const want = args.on === true ? true : args.on === false ? false : !currently;
-      if (want === currently) return { verified: true, method: 'already', before, after: state(media), fullscreen: currently };
-      let method = 'api';
-      try {
-        if (want) {
-          const req = media.requestFullscreen || media.webkitRequestFullscreen || media.mozRequestFullScreen;
-          if (!req) throw Object.assign(new Error('no requestFullscreen'), { code: 'UNSUPPORTED_CAPABILITY' });
-          await req.call(media);
-        } else {
-          const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen;
-          if (!exit) throw Object.assign(new Error('no exitFullscreen'), { code: 'UNSUPPORTED_CAPABILITY' });
-          await exit.call(doc);
-        }
-      } catch (error) {
-        method = 'control';
-        const root = playerRoot(media);
-        if (typeof hover === 'function') hover(root, args.selector);
-        await sleep(250, deadline);
-        const btn = fullscreenControl(root);
-        if (!btn || typeof clickAt !== 'function') {
-          fail(`Fullscreen API rejected (${error.message}) and no in-player Full screen control was found. This is not a missing extension.`, error.code || 'VERIFICATION_FAILED');
-        }
-        clickAt(btn, 'fullscreen-control');
+      if (want === currently) return { verified: true, method: 'already', before, after: state(media), fullscreen: currently, requested: want };
+      const resume = args.resume ?? !media.paused;
+      if (!want) {
+        return { servo: { action: 'escape', want, resume, mediaSelector: args.selector }, requested: want, before };
       }
-      await until(media, () => isFullscreen(media, doc) === want, deadline, `Fullscreen ${want ? 'enter' : 'exit'} not verified`);
-      const after = state(media);
-      return { verified: true, method, requested: want, before, after, fullscreen: after.fullscreen };
+      if (args.phase !== 'target') {
+        return { servo: { action: 'reveal', want, resume, mediaSelector: args.selector }, requested: want, before };
+      }
+      const root = playerRoot(media);
+      let btn = fullscreenControl(root, painted);
+      const ready = btn && (!painted || painted(btn));
+      if (!ready) {
+        if (!media.paused) {
+          media.pause();
+          return { servo: { action: 'paused-reveal', want, resume: true, mediaSelector: args.selector }, requested: want, before };
+        }
+        fail('No painted in-player Full screen control after OS hover (and pause fallback).', 'CHROME_HIDDEN');
+      }
+      const ref = refFor(btn);
+      return {
+        servo: { action: 'click', want, resume, mediaSelector: args.selector, selector: `@${ref}` },
+        requested: want, before,
+      };
     }
     fail(`Unknown media operation ${cmd}`, 'UNSUPPORTED_CAPABILITY');
   };

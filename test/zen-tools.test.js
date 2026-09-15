@@ -85,21 +85,32 @@ test('media failure cases: unknown duration, unseekable target, autoplay rejecti
   await assert.rejects(() => run('media_seek', { selector: 'video', seconds: 5 }, { deadline: Date.now() - 1 }), { code: 'VERIFICATION_FAILED' });
 });
 
-test('media_fullscreen uses the element API and verifies document.fullscreenElement', async () => {
-  const doc = { fullscreenElement: null, exitFullscreen: async function exit() { doc.fullscreenElement = null; } };
+test('media_fullscreen asks the adapter to servo-click a painted Full screen control', async () => {
+  const btn = { getAttribute: (n) => n === 'aria-label' ? 'Full screen' : null, textContent: '' };
+  const root = { querySelectorAll: () => [btn] };
   const media = {
-    isConnected: true, localName: 'video', currentTime: 1, duration: 10, paused: true,
+    isConnected: true, localName: 'video', currentTime: 1, duration: 10, paused: false,
     ended: false, seeking: false, readyState: 4, networkState: 1, muted: true, volume: 1,
     playbackRate: 1, seekable: { length: 1, start: () => 0, end: () => 10 }, poster: '', error: null,
-    closest: () => null, parentElement: null,
-    requestFullscreen: async function req() { doc.fullscreenElement = media; },
+    closest: () => root, parentElement: root,
   };
   const fail = (message, code) => { throw Object.assign(new Error(message), { code }); };
-  const run = createMediaTools({ document: doc }, { selectUnique: () => media, refFor: () => 'e1', fail, checkDeadline: () => {}, sleep: async () => {} });
-  const entered = await run('media_fullscreen', { selector: 'video', on: true }, { deadline: Date.now() + 1000 });
-  assert.equal(entered.verified, true);
-  assert.equal(entered.fullscreen, true);
-  assert.equal(entered.method, 'api');
-  const left = await run('media_fullscreen', { selector: 'video', on: false }, { deadline: Date.now() + 1000 });
-  assert.equal(left.fullscreen, false);
+  const run = createMediaTools({ document: {} }, {
+    selectUnique: () => media, refFor: (el) => el === btn ? 'e9' : 'e1',
+    fail, checkDeadline: () => {}, sleep: async () => {}, painted: () => true,
+  });
+  media.pause = () => { media.paused = true; };
+  const reveal = await run('media_fullscreen', { selector: 'video', on: true }, { deadline: Date.now() + 1000 });
+  assert.equal(reveal.servo.action, 'reveal');
+  assert.equal(media.paused, false, 'reveal must not pause if OS hover can show chrome');
+  const entered = await run('media_fullscreen', { selector: 'video', on: true, phase: 'target' }, { deadline: Date.now() + 1000 });
+  assert.equal(entered.servo.resume, true);
+  assert.equal(entered.servo.action, 'click');
+  assert.equal(entered.servo.selector, '@e9');
+  assert.equal(entered.requested, true);
+  const runFs = createMediaTools({ document: { fullscreenElement: media } }, {
+    selectUnique: () => media, refFor: () => 'e1', fail, checkDeadline: () => {}, sleep: async () => {}, painted: () => true,
+  });
+  const left = await runFs('media_fullscreen', { selector: 'video', on: false }, { deadline: Date.now() + 1000 });
+  assert.equal(left.servo.action, 'escape');
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { coreTools, extraTools, zenTools, enabledTools, upstream, asZenBrowserName } from "@mcp-zen/common";
@@ -8,6 +9,43 @@ export class CapabilityError extends Error {
   code = "UNSUPPORTED_CAPABILITY";
 }
 const unsupportedCommon = ["restore", "restoreSave", "restoreCheckUrl", "restoreCheckText", "restoreCheckFn", "allowedDomains", "caCert", "clearCaCert", "idleTimeout", "extraArgs"];
+function runXdotool(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("xdotool", args.map(String), { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", err = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { err += d; });
+    child.on("error", (error) => reject(Object.assign(new Error(`xdotool failed (${error.message})`), { code: "VERIFICATION_FAILED" })));
+    child.on("close", (code) => {
+      if (code === 0) resolve(out);
+      else reject(Object.assign(new Error(`xdotool ${args[0]} failed (${err.trim() || code})`), { code: "VERIFICATION_FAILED" }));
+    });
+  });
+}
+function parseGeom(shell) {
+  const g = {};
+  for (const line of String(shell || "").split("\n")) {
+    const m = /^(WINDOW|X|Y|WIDTH|HEIGHT|SCREEN)=(-?\d+)/.exec(line.trim());
+    if (m) g[m[1]] = Number(m[2]);
+  }
+  return g;
+}
+async function zenWindowId() {
+  const vis = await runXdotool(["search", "--onlyvisible", "--class", "zen"]);
+  const ids = vis.trim().split(/\s+/).map(Number).filter(Boolean);
+  if (!ids.length) throw Object.assign(new Error("No visible Zen window for OS pointer"), { code: "VERIFICATION_FAILED" });
+  let active;
+  try { active = Number((await runXdotool(["getactivewindow"])).trim()); } catch { active = 0; }
+  if (ids.includes(active)) return active;
+  let best = ids[0], bestArea = -1;
+  for (const id of ids) {
+    const g = parseGeom(await runXdotool(["getwindowgeometry", "--shell", String(id)]));
+    const area = (g.WIDTH || 0) * (g.HEIGHT || 0);
+    if (area > bestArea) { bestArea = area; best = id; }
+  }
+  await runXdotool(["windowactivate", "--sync", String(best)]);
+  return best;
+}
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) return reject(signal.reason);
   const abort = () => { clearTimeout(timer); reject(signal.reason); };
@@ -191,6 +229,51 @@ export class AgentBrowserAdapter {
     return { ...data, tabId, frameId: data.frameId ?? frameId };
   }
 
+  async hoverVideo(session, context, tabId, selector, wid, journal = []) {
+    const aim = await this.page("pointer_aim", { selector }, session, context, tabId);
+    const vis = aim.box.visual || aim.box.viewport;
+    const dpr = aim.box.dpr || 1;
+    const geom = parseGeom(await runXdotool(["getwindowgeometry", "--shell", String(wid)]));
+    const hitX = ((aim.box.mozInnerScreenX || 0) * dpr - (geom.X || 0)) + (vis.x + vis.w / 2) * dpr;
+    const hitY = ((aim.box.mozInnerScreenY || 0) * dpr - (geom.Y || 0)) + (vis.y + vis.h / 2) * dpr;
+    await runXdotool(["mousemove", "--window", String(wid), "--sync", String(Math.round(hitX)), String(Math.round(hitY))]);
+    journal.push({ hoverVideo: true, hitX, hitY, painted: aim.painted, geom, mozInner: [aim.box.mozInnerScreenX, aim.box.mozInnerScreenY] });
+  }
+
+  async servoClick(session, context, tabId, selector, wid, journal = []) {
+    const aim = await this.page("pointer_aim", { selector }, session, context, tabId);
+    if (!aim.painted) throw Object.assign(new Error(`Target ${selector} is not painted/hit-testable; refusing to click (would hit the video).`), { code: "CHROME_HIDDEN" });
+    const vis = aim.box.visual || aim.box.viewport;
+    const cx = vis.x + vis.w / 2;
+    const cy = vis.y + vis.h / 2;
+    const dpr = aim.box.dpr || 1;
+    const geom = parseGeom(await runXdotool(["getwindowgeometry", "--shell", String(wid)]));
+    const originX = (aim.box.mozInnerScreenX || 0) * dpr;
+    const originY = (aim.box.mozInnerScreenY || 0) * dpr;
+    let hitX = (originX - (geom.X || 0)) + cx * dpr;
+    let hitY = (originY - (geom.Y || 0)) + cy * dpr;
+    for (let i = 0; i < 5; i++) {
+      await runXdotool(["mousemove", "--window", String(wid), "--sync", String(Math.round(hitX)), String(Math.round(hitY))]);
+      await sleep(50, context.signal);
+      const probe = await this.page("pointer_last", {}, session, context, tabId);
+      const move = probe.move;
+      journal.push({ i, hitX, hitY, cx, cy, dpr, geom, mozInner: [aim.box.mozInnerScreenX, aim.box.mozInnerScreenY], move, painted: aim.painted });
+      if (!move) continue;
+      const errX = cx - move.clientX;
+      const errY = cy - move.clientY;
+      if (Math.hypot(errX, errY) <= 3) {
+        const hit = await this.page("pointer_hit", { selector, clientX: move.clientX, clientY: move.clientY }, session, context, tabId);
+        journal.at(-1).hit = hit;
+        if (!hit.ok) throw Object.assign(new Error(`Pointer is on <${hit.hit || "unknown" }>, not the Full screen control. Aborting so we do not pause the video.`), { code: "CHROME_HIDDEN" });
+        await runXdotool(["click", "1"]);
+        return journal;
+      }
+      hitX += errX * dpr;
+      hitY += errY * dpr;
+    }
+    throw Object.assign(new Error(`Closed-loop pointer never acquired the control. journal=${JSON.stringify(journal)}`), { code: "VERIFICATION_FAILED" });
+  }
+
   async closeSession(session, context) {
     // Never claim ownership of a user's pre-existing tabs or close their browser.
     const tabs = await this.request("tab_list", {}, context);
@@ -285,6 +368,43 @@ export class AgentBrowserAdapter {
       return toolResult({ path: filename, ...(data.refs ? { refs: data.refs } : {}) }, null, images);
     }
     const data = await this.page(cmd, args, session, context, tabId);
+    if (cmd === "media_fullscreen" && data.servo) {
+      await this.request("tab_switch", { tabId }, context);
+      const wid = await zenWindowId();
+      const journal = [];
+      const resumeWanted = Boolean(data.servo.resume);
+      const sel = data.servo.mediaSelector || args.selector;
+      if (data.servo.action === "escape") {
+        await runXdotool(["key", "--window", String(wid), "Escape"]);
+        await sleep(400, context.signal);
+      } else {
+        if (data.servo.action === "reveal") {
+          await this.hoverVideo(session, context, tabId, sel, wid, journal);
+          await sleep(450, context.signal);
+          Object.assign(data, await this.page("media_fullscreen", { ...args, phase: "target", resume: resumeWanted }, session, context, tabId));
+        }
+        if (data.servo?.action === "paused-reveal") {
+          await sleep(400, context.signal);
+          Object.assign(data, await this.page("media_fullscreen", { ...args, phase: "target", resume: true }, session, context, tabId));
+        }
+        if (data.servo?.action === "click") {
+          await this.servoClick(session, context, tabId, data.servo.selector, wid, journal);
+          await sleep(400, context.signal);
+        } else if (data.servo?.action !== "escape") {
+          throw Object.assign(new Error(`Fullscreen reveal did not produce a painted control. journal=${JSON.stringify(journal)} ${JSON.stringify(data.servo)}`), { code: data.servo ? "CHROME_HIDDEN" : "VERIFICATION_FAILED" });
+        }
+      }
+      const check = await this.page("media_state", { selector: sel }, session, context, tabId);
+      const item = check.media?.[0];
+      if (Boolean(item?.fullscreen) !== Boolean(data.requested)) {
+        throw Object.assign(new Error(`Fullscreen ${data.requested ? "enter" : "exit"} not verified after closed-loop pointer. Observed fullscreen=${item?.fullscreen}. journal=${JSON.stringify(journal)}`), { code: "VERIFICATION_FAILED" });
+      }
+      if (resumeWanted && item?.paused) {
+        try { await this.page("media_play", { selector: sel }, session, context, tabId); }
+        catch { /* play is best-effort after a trusted click */ }
+      }
+      return toolResult({ verified: true, method: data.servo.action === "escape" ? "escape" : "servo", requested: data.requested, fullscreen: item.fullscreen, after: item, journal });
+    }
     if (cmd === "click" && data.newTabUrl) return toolResult(await this.newTab({ url: data.newTabUrl }, session, context));
     const { documentId, nextRef, tabId: _tabId, ...publicData } = data;
     return toolResult(publicData);
